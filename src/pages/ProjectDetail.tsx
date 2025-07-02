@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { 
@@ -476,6 +477,331 @@ const ProjectDetail = () => {
     </div>
   );
 
+  const SchedulesView = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
+          <p className="text-muted-foreground">Create and manage your image generation schedules</p>
+        </div>
+        <Button className="bg-gradient-primary hover:shadow-glow">
+          <Plus className="mr-2 h-4 w-4" />
+          New Schedule
+        </Button>
+      </div>
+
+      <div className="space-y-4">
+        {project && (
+          <Card className="shadow-card border-border/50">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${project.schedule_enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                  <h3 className="text-lg font-semibold">{project.name}</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="sm" className="text-destructive">
+                    <AlertCircle className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4 text-sm text-muted-foreground mb-4">
+                <div>
+                  <Clock className="h-3 w-3 inline mr-1" />
+                  Every {project.generation_interval_minutes}m
+                </div>
+                <div>
+                  <Images className="h-3 w-3 inline mr-1" />
+                  Target: {project.max_images_to_generate || 'Unlimited'} images
+                </div>
+                <div>1080p • 1:1</div>
+              </div>
+
+              <div className="mb-4">
+                <div className="flex justify-between text-sm mb-2">
+                  <span>Progress</span>
+                  <span>{images.length} / {project.max_images_to_generate || '∞'}</span>
+                </div>
+                <Progress 
+                  value={project.max_images_to_generate ? (images.length / project.max_images_to_generate) * 100 : 0} 
+                  className="h-2" 
+                />
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm font-medium mb-2">Prompt</p>
+                <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+                  {project.prompt || 'No prompt set'}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-muted-foreground">
+                  Created: {new Date(project.created_at).toLocaleDateString()}
+                  {project.schedule_enabled && project.last_generation_at && (
+                    <span className="ml-4">
+                      Next run: {new Date(new Date(project.last_generation_at).getTime() + project.generation_interval_minutes * 60000).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+                <Badge variant={project.schedule_enabled ? "default" : "secondary"}>
+                  {project.schedule_enabled ? "Active" : "Paused"}
+                </Badge>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+
+  const SettingsView = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+          <p className="text-muted-foreground">Manage your account and application preferences</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Account Information */}
+        <Card className="shadow-card border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5" />
+              Account Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Username</label>
+              <p className="text-sm text-muted-foreground">demo</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium">Plan</label>
+              <p className="text-sm text-muted-foreground">Free</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium">Available Tokens</label>
+                <p className="text-sm text-muted-foreground">Unlimited</p>
+              </div>
+              <Button variant="outline" size="sm">Upgrade Plan</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* API Configuration */}
+        <Card className="shadow-card border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              API Configuration
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label className="text-sm font-medium">Replicate API Key</label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Your API key is used to authenticate with Replicate's image models
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  type="password" 
+                  placeholder="Enter your Replicate API key..."
+                  className="flex-1 px-3 py-2 text-sm border border-border rounded-md bg-background"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium">API Status</label>
+              <p className="text-sm text-green-600">Configured</p>
+            </div>
+            <Button className="w-full bg-gradient-primary hover:shadow-glow">
+              Save API Configuration
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Usage Statistics */}
+        <Card className="shadow-card border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Usage Statistics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm font-medium">Active Schedules</p>
+                <p className="text-2xl font-bold text-primary">{project?.schedule_enabled ? 1 : 0}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Total Images</p>
+                <p className="text-2xl font-bold text-primary">{images.length}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Queue Items</p>
+                <p className="text-2xl font-bold text-primary">{jobs.filter(job => job.status === 'pending').length}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Success Rate</p>
+                <p className="text-2xl font-bold text-primary">{stats.successRate.toFixed(0)}%</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Statistics are updated in real-time as your schedules run
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Data Management */}
+        <Card className="shadow-card border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Data Management
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <Button variant="outline" className="w-full justify-start">
+                Export Generated Images
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                Export Schedule Data
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                Import Configuration
+              </Button>
+            </div>
+            
+            <div className="border-t pt-3 space-y-2">
+              <Button variant="destructive" className="w-full justify-start">
+                Clear Failed Queue Items
+              </Button>
+              <Button variant="destructive" className="w-full justify-start">
+                Delete All Generated Images
+              </Button>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                Destructive actions cannot be undone
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* System Information */}
+      <Card className="shadow-card border-border/50">
+        <CardHeader>
+          <CardTitle>System Information</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-6 text-sm">
+            <div>
+              <p className="font-medium">Application Version</p>
+              <p className="text-muted-foreground">1.0.0</p>
+            </div>
+            <div>
+              <p className="font-medium">API Model</p>
+              <p className="text-muted-foreground">Flux Kontext Max</p>
+            </div>
+            <div>
+              <p className="font-medium">Last Updated</p>
+              <p className="text-muted-foreground">Just now</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+
+  const QueueView = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Generation Queue</h1>
+          <p className="text-muted-foreground">Monitor and manage your image generation queue</p>
+        </div>
+        <Button variant="outline">
+          <Settings className="mr-2 h-4 w-4" />
+          Manage Queue
+        </Button>
+      </div>
+
+      <Card className="shadow-card border-border/50">
+        <CardHeader>
+          <CardTitle>Queue Items</CardTitle>
+          <CardDescription>{jobs.filter(job => job.status === 'pending').length} pending</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {jobs.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Prompt</TableHead>
+                  <TableHead>Resolution</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobs.slice(0, 10).map((job) => (
+                  <TableRow key={job.id}>
+                    <TableCell className="font-medium">
+                      {project?.prompt || 'No prompt'}
+                    </TableCell>
+                    <TableCell>1080p • 1:1</TableCell>
+                    <TableCell>
+                      <Badge variant={
+                        job.status === 'completed' ? 'default' :
+                        job.status === 'running' ? 'secondary' :
+                        job.status === 'failed' ? 'destructive' : 'outline'
+                      }>
+                        {job.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">Medium</Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button variant="outline" size="sm">
+                          <Settings className="h-3 w-3" />
+                        </Button>
+                        <Button variant="outline" size="sm" className="text-destructive">
+                          <AlertCircle className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="text-center py-12">
+              <Clock className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">No items in queue</h3>
+              <p className="text-muted-foreground mb-4">Start a schedule or generate manually to see queue items</p>
+              <Button onClick={generateNow} className="bg-gradient-primary hover:shadow-glow">
+                <Zap className="mr-2 h-4 w-4" />
+                Generate Now
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+
   const renderActiveView = () => {
     switch (activeView) {
       case 'dashboard':
@@ -483,11 +809,11 @@ const ProjectDetail = () => {
       case 'images':
         return <ImagesView />;
       case 'schedules':
-        return <div className="p-8 text-center">Schedules view coming soon...</div>;
+        return <SchedulesView />;
       case 'queue':
-        return <div className="p-8 text-center">Queue view coming soon...</div>;
+        return <QueueView />;
       case 'settings':
-        return <div className="p-8 text-center">Settings view coming soon...</div>;
+        return <SettingsView />;
       default:
         return <DashboardView />;
     }
