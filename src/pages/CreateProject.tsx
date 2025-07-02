@@ -17,7 +17,7 @@ const CreateProject = () => {
     name: '',
     description: '',
     prompt: '',
-    schedule_enabled: false,
+    schedule_enabled: true,
     schedule_duration_hours: 8,
     max_images_to_generate: 100,
     generation_interval_minutes: 60
