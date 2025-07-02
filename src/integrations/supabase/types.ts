@@ -11,35 +11,104 @@ export type Database = {
     Tables: {
       generated_images: {
         Row: {
+          aspect_ratio: string | null
           generated_at: string
+          generation_job_id: string | null
+          generation_time_seconds: number | null
           id: string
           image_url: string
+          model_used: string | null
           project_id: string
           prompt: string
           replicate_prediction_id: string | null
+          seed: number | null
           storage_path: string | null
         }
         Insert: {
+          aspect_ratio?: string | null
           generated_at?: string
+          generation_job_id?: string | null
+          generation_time_seconds?: number | null
           id?: string
           image_url: string
+          model_used?: string | null
           project_id: string
           prompt: string
           replicate_prediction_id?: string | null
+          seed?: number | null
           storage_path?: string | null
         }
         Update: {
+          aspect_ratio?: string | null
           generated_at?: string
+          generation_job_id?: string | null
+          generation_time_seconds?: number | null
           id?: string
           image_url?: string
+          model_used?: string | null
           project_id?: string
           prompt?: string
           replicate_prediction_id?: string | null
+          seed?: number | null
           storage_path?: string | null
         }
         Relationships: [
           {
+            foreignKeyName: "fk_generated_images_generation_job"
+            columns: ["generation_job_id"]
+            isOneToOne: false
+            referencedRelation: "generation_jobs"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "generated_images_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      generation_jobs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          images_generated: number | null
+          project_id: string
+          scheduled_at: string
+          started_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          images_generated?: number | null
+          project_id: string
+          scheduled_at: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          images_generated?: number | null
+          project_id?: string
+          scheduled_at?: string
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generation_jobs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -51,9 +120,16 @@ export type Database = {
         Row: {
           created_at: string
           description: string | null
+          generation_interval_minutes: number | null
           id: string
+          is_active: boolean | null
+          last_generation_at: string | null
+          max_images_to_generate: number | null
           name: string
+          prompt: string | null
           replicate_model_id: string | null
+          schedule_duration_hours: number | null
+          schedule_enabled: boolean | null
           status: string
           updated_at: string
           user_id: string
@@ -61,9 +137,16 @@ export type Database = {
         Insert: {
           created_at?: string
           description?: string | null
+          generation_interval_minutes?: number | null
           id?: string
+          is_active?: boolean | null
+          last_generation_at?: string | null
+          max_images_to_generate?: number | null
           name: string
+          prompt?: string | null
           replicate_model_id?: string | null
+          schedule_duration_hours?: number | null
+          schedule_enabled?: boolean | null
           status?: string
           updated_at?: string
           user_id: string
@@ -71,9 +154,16 @@ export type Database = {
         Update: {
           created_at?: string
           description?: string | null
+          generation_interval_minutes?: number | null
           id?: string
+          is_active?: boolean | null
+          last_generation_at?: string | null
+          max_images_to_generate?: number | null
           name?: string
+          prompt?: string | null
           replicate_model_id?: string | null
+          schedule_duration_hours?: number | null
+          schedule_enabled?: boolean | null
           status?: string
           updated_at?: string
           user_id?: string
