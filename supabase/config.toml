@@ -11,6 +11,9 @@ port = 54322
 [functions.generate-image]
 verify_jwt = false
 
+[functions.schedule-processor]
+verify_jwt = false
+
 [auth]
 enabled = true
 port = 54324
