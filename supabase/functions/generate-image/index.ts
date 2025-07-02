@@ -14,8 +14,12 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  let body: any = {}
+  
   try {
     console.log("=== Image Generation Function Called ===")
+    body = await req.json()
+    console.log("Request body:", body)
     
     const REPLICATE_API_KEY = Deno.env.get('REPLICATE_API_KEY')
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
@@ -35,9 +39,6 @@ serve(async (req) => {
     const replicate = new Replicate({
       auth: REPLICATE_API_KEY,
     })
-
-    const body = await req.json()
-    console.log("Request body:", body)
 
     const { project_id, manual_generation = false, job_id = null } = body
 
@@ -121,8 +122,7 @@ serve(async (req) => {
         input: {
           prompt: project.prompt,
           aspect_ratio: "1:1",
-          output_format: "webp",
-          output_quality: 80,
+          output_format: "png",
           safety_tolerance: 2
         }
       }
