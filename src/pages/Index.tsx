@@ -1,19 +1,112 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { supabase } from '@/integrations/supabase/client';
 import { Bot, Sparkles, Zap, Clock, Image, Settings } from 'lucide-react';
+
+interface Activity {
+  type: string;
+  message: string;
+  time: string;
+  color: string;
+}
 
 const Index = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
+  const [activities, setActivities] = useState<Activity[]>([]);
 
   useEffect(() => {
     if (!loading && !user) {
       navigate('/auth');
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (user) {
+      fetchRecentActivities();
+    }
+  }, [user]);
+
+  const fetchRecentActivities = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('generation_jobs')
+        .select(`
+          *,
+          projects!inner(name, user_id)
+        `)
+        .eq('projects.user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+
+      const formattedActivities: Activity[] = data.map((job: any) => {
+        const timeAgo = getTimeAgo(new Date(job.created_at));
+        const projectName = job.projects.name;
+
+        switch (job.status) {
+          case 'completed':
+            return {
+              type: 'success',
+              message: `Successfully generated image for "${projectName}"`,
+              time: timeAgo,
+              color: 'bg-green-500'
+            };
+          case 'failed':
+            return {
+              type: 'error',
+              message: job.error_message || `Failed to generate image for "${projectName}"`,
+              time: timeAgo,
+              color: 'bg-red-500'
+            };
+          case 'running':
+            return {
+              type: 'info',
+              message: `Generating image for "${projectName}"`,
+              time: timeAgo,
+              color: 'bg-blue-500'
+            };
+          case 'pending':
+            return {
+              type: 'info',
+              message: `Scheduled generation added to queue for "${projectName}"`,
+              time: timeAgo,
+              color: 'bg-green-500'
+            };
+          default:
+            return {
+              type: 'info',
+              message: `Job created for "${projectName}"`,
+              time: timeAgo,
+              color: 'bg-gray-500'
+            };
+        }
+      });
+
+      setActivities(formattedActivities);
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+    }
+  };
+
+  const getTimeAgo = (date: Date): string => {
+    const now = new Date();
+    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
+    
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+    
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+  };
+
 
   if (loading) {
     return (
@@ -191,10 +284,24 @@ const Index = () => {
                 <CardTitle>Recent Activity</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8">
-                  <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">No recent activity</p>
-                </div>
+                {activities.length > 0 ? (
+                  <div className="space-y-4">
+                    {activities.map((activity, index) => (
+                      <div key={index} className="flex items-start space-x-3">
+                        <div className={`w-2 h-2 ${activity.color} rounded-full mt-2`} />
+                        <div className="flex-1">
+                          <p className="text-sm text-foreground">{activity.message}</p>
+                          <p className="text-xs text-muted-foreground">{activity.time}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No recent activity</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
