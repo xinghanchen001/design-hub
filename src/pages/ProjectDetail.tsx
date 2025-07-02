@@ -136,6 +136,33 @@ const ProjectDetail = () => {
     }
   };
 
+  const generateNow = async () => {
+    if (!project) return;
+    
+    try {
+      toast.info('Starting image generation...');
+      
+      const { data, error } = await supabase.functions.invoke('generate-image', {
+        body: {
+          project_id: projectId,
+          manual_generation: true
+        }
+      });
+
+      if (error) throw error;
+      
+      if (data?.success) {
+        toast.success('Image generated successfully!');
+        // Refresh the data
+        fetchProjectData();
+      } else {
+        throw new Error(data?.error || 'Generation failed');
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to generate image');
+    }
+  };
+
   const stats = {
     activeSchedules: project?.schedule_enabled ? 1 : 0,
     imagesGenerated: images.length,
@@ -327,7 +354,7 @@ const ProjectDetail = () => {
               <Plus className="mr-2 h-4 w-4" />
               {project.schedule_enabled ? 'Manage Schedule' : 'Create Schedule'}
             </Button>
-            <Button className="w-full justify-start" variant="outline">
+            <Button onClick={generateNow} className="w-full justify-start" variant="outline">
               <Zap className="mr-2 h-4 w-4" />
               Generate Now
             </Button>
@@ -409,7 +436,7 @@ const ProjectDetail = () => {
           <h1 className="text-2xl font-bold text-foreground">Generated Images</h1>
           <p className="text-muted-foreground">View all AI-generated images from this project</p>
         </div>
-        <Button className="bg-gradient-primary hover:shadow-glow">
+        <Button onClick={generateNow} className="bg-gradient-primary hover:shadow-glow">
           <Plus className="mr-2 h-4 w-4" />
           Generate New
         </Button>
@@ -440,7 +467,7 @@ const ProjectDetail = () => {
           <Image className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">No images generated yet</h3>
           <p className="text-muted-foreground mb-4">Start your schedule or generate manually to see images here</p>
-          <Button className="bg-gradient-primary hover:shadow-glow">
+          <Button onClick={generateNow} className="bg-gradient-primary hover:shadow-glow">
             <Zap className="mr-2 h-4 w-4" />
             Generate First Image
           </Button>
