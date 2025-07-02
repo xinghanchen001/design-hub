@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
 import { Bot, Sparkles, Zap, Clock, Image, Settings } from 'lucide-react';
 
@@ -17,6 +23,7 @@ const Index = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [checkingProjects, setCheckingProjects] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -26,18 +33,47 @@ const Index = () => {
 
   useEffect(() => {
     if (user) {
-      fetchRecentActivities();
+      checkForExistingProjects();
     }
   }, [user]);
+
+  const checkForExistingProjects = async () => {
+    try {
+      const { data: projects, error } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (error) throw error;
+
+      // If user has projects, redirect to the first project's dashboard
+      if (projects && projects.length > 0) {
+        navigate(`/project/${projects[0].id}`);
+        return;
+      }
+
+      // If no projects, fetch activities and show landing page
+      fetchRecentActivities();
+    } catch (error) {
+      console.error('Error checking for projects:', error);
+      // Fallback to landing page
+      fetchRecentActivities();
+    } finally {
+      setCheckingProjects(false);
+    }
+  };
 
   const fetchRecentActivities = async () => {
     try {
       const { data, error } = await supabase
         .from('generation_jobs')
-        .select(`
+        .select(
+          `
           *,
           projects!inner(name, user_id)
-        `)
+        `
+        )
         .eq('projects.user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5);
@@ -54,35 +90,37 @@ const Index = () => {
               type: 'success',
               message: `Successfully generated image for "${projectName}"`,
               time: timeAgo,
-              color: 'bg-green-500'
+              color: 'bg-green-500',
             };
           case 'failed':
             return {
               type: 'error',
-              message: job.error_message || `Failed to generate image for "${projectName}"`,
+              message:
+                job.error_message ||
+                `Failed to generate image for "${projectName}"`,
               time: timeAgo,
-              color: 'bg-red-500'
+              color: 'bg-red-500',
             };
           case 'running':
             return {
               type: 'info',
               message: `Generating image for "${projectName}"`,
               time: timeAgo,
-              color: 'bg-blue-500'
+              color: 'bg-blue-500',
             };
           case 'pending':
             return {
               type: 'info',
               message: `Scheduled generation added to queue for "${projectName}"`,
               time: timeAgo,
-              color: 'bg-green-500'
+              color: 'bg-green-500',
             };
           default:
             return {
               type: 'info',
               message: `Job created for "${projectName}"`,
               time: timeAgo,
-              color: 'bg-gray-500'
+              color: 'bg-gray-500',
             };
         }
       });
@@ -95,25 +133,32 @@ const Index = () => {
 
   const getTimeAgo = (date: Date): string => {
     const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
+    const diffInMinutes = Math.floor(
+      (now.getTime() - date.getTime()) / (1000 * 60)
+    );
+
     if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
-    
+    if (diffInMinutes < 60)
+      return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
+
     const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
-    
+    if (diffInHours < 24)
+      return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+
     const diffInDays = Math.floor(diffInHours / 24);
     return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
   };
 
-
-  if (loading) {
+  if (loading || checkingProjects) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-subtle">
         <div className="text-center space-y-4">
           <Bot className="h-12 w-12 text-primary mx-auto animate-pulse" />
-          <p className="text-muted-foreground">Loading your AI workspace...</p>
+          <p className="text-muted-foreground">
+            {loading
+              ? 'Loading your AI workspace...'
+              : 'Checking your projects...'}
+          </p>
         </div>
       </div>
     );
@@ -140,11 +185,7 @@ const Index = () => {
             <span className="text-sm text-muted-foreground">
               Welcome, {user.email}
             </span>
-            <Button 
-              onClick={signOut}
-              variant="outline"
-              size="sm"
-            >
+            <Button onClick={signOut} variant="outline" size="sm">
               Sign Out
             </Button>
           </div>
@@ -158,9 +199,11 @@ const Index = () => {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-3xl font-bold text-foreground">Dashboard</h2>
-              <p className="text-muted-foreground">Monitor your AI image generation tasks</p>
+              <p className="text-muted-foreground">
+                Monitor your AI image generation tasks
+              </p>
             </div>
-            <Button 
+            <Button
               onClick={() => navigate('/create-project')}
               className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
             >
@@ -178,9 +221,13 @@ const Index = () => {
                     <Bot className="h-6 w-6 text-primary-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Active Schedules</p>
+                    <p className="text-sm text-muted-foreground">
+                      Active Schedules
+                    </p>
                     <p className="text-2xl font-bold text-foreground">0</p>
-                    <p className="text-xs text-muted-foreground">12% from last week</p>
+                    <p className="text-xs text-muted-foreground">
+                      12% from last week
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -193,9 +240,13 @@ const Index = () => {
                     <Image className="h-6 w-6 text-primary-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Images Generated</p>
+                    <p className="text-sm text-muted-foreground">
+                      Images Generated
+                    </p>
                     <p className="text-2xl font-bold text-foreground">0</p>
-                    <p className="text-xs text-muted-foreground">24% from last week</p>
+                    <p className="text-xs text-muted-foreground">
+                      24% from last week
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -208,9 +259,13 @@ const Index = () => {
                     <Clock className="h-6 w-6 text-primary-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Queue Status</p>
+                    <p className="text-sm text-muted-foreground">
+                      Queue Status
+                    </p>
                     <p className="text-2xl font-bold text-foreground">0</p>
-                    <p className="text-xs text-muted-foreground">pending generation</p>
+                    <p className="text-xs text-muted-foreground">
+                      pending generation
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -223,9 +278,13 @@ const Index = () => {
                     <Zap className="h-6 w-6 text-primary-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Success Rate</p>
+                    <p className="text-sm text-muted-foreground">
+                      Success Rate
+                    </p>
                     <p className="text-2xl font-bold text-foreground">100%</p>
-                    <p className="text-xs text-muted-foreground">0.8% from last week</p>
+                    <p className="text-xs text-muted-foreground">
+                      0.8% from last week
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -239,13 +298,19 @@ const Index = () => {
               <Card className="shadow-card border-border/50">
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle>Active Schedules</CardTitle>
-                  <Button variant="outline" size="sm">View All</Button>
+                  <Button variant="outline" size="sm">
+                    View All
+                  </Button>
                 </CardHeader>
                 <CardContent>
                   <div className="text-center py-8">
                     <Bot className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground mb-2">No active schedules</p>
-                    <p className="text-sm text-muted-foreground">Create your first schedule</p>
+                    <p className="text-muted-foreground mb-2">
+                      No active schedules
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Create your first schedule
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -257,8 +322,8 @@ const Index = () => {
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => navigate('/create-project')}
                 >
@@ -288,10 +353,16 @@ const Index = () => {
                   <div className="space-y-4">
                     {activities.map((activity, index) => (
                       <div key={index} className="flex items-start space-x-3">
-                        <div className={`w-2 h-2 ${activity.color} rounded-full mt-2`} />
+                        <div
+                          className={`w-2 h-2 ${activity.color} rounded-full mt-2`}
+                        />
                         <div className="flex-1">
-                          <p className="text-sm text-foreground">{activity.message}</p>
-                          <p className="text-xs text-muted-foreground">{activity.time}</p>
+                          <p className="text-sm text-foreground">
+                            {activity.message}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {activity.time}
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -309,8 +380,12 @@ const Index = () => {
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Generation Queue</CardTitle>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">0 pending</span>
-                  <Button variant="outline" size="sm">Manage Queue</Button>
+                  <span className="text-sm text-muted-foreground">
+                    0 pending
+                  </span>
+                  <Button variant="outline" size="sm">
+                    Manage Queue
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>

@@ -1,31 +1,56 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { 
-  Bot, 
-  Calendar, 
-  Image, 
-  Activity, 
-  Settings, 
-  Play, 
-  Pause, 
-  BarChart3, 
-  Clock, 
-  CheckCircle, 
+import {
+  Bot,
+  Calendar,
+  Image,
+  Activity,
+  Settings,
+  Play,
+  Pause,
+  BarChart3,
+  Clock,
+  CheckCircle,
   AlertCircle,
   Plus,
   Images,
   Zap,
-  Trash2
+  Trash2,
 } from 'lucide-react';
 
 interface Project {
@@ -65,7 +90,7 @@ const ProjectDetail = () => {
   const { projectId } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
   const [project, setProject] = useState<Project | null>(null);
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
   const [images, setImages] = useState<GeneratedImage[]>([]);
@@ -74,7 +99,7 @@ const ProjectDetail = () => {
 
   useEffect(() => {
     if (!user || !projectId) return;
-    
+
     fetchProjectData();
   }, [user, projectId]);
 
@@ -112,7 +137,6 @@ const ProjectDetail = () => {
 
       if (imagesError) throw imagesError;
       setImages(imagesData || []);
-
     } catch (error: any) {
       toast.error(error.message || 'Failed to load project data');
       navigate('/');
@@ -123,7 +147,7 @@ const ProjectDetail = () => {
 
   const toggleSchedule = async () => {
     if (!project) return;
-    
+
     try {
       const { error } = await supabase
         .from('projects')
@@ -131,20 +155,30 @@ const ProjectDetail = () => {
         .eq('id', projectId);
 
       if (error) throw error;
-      
-      setProject(prev => prev ? { ...prev, schedule_enabled: !prev.schedule_enabled } : null);
-      toast.success(project.schedule_enabled ? 'Schedule paused' : 'Schedule activated');
+
+      setProject((prev) =>
+        prev ? { ...prev, schedule_enabled: !prev.schedule_enabled } : null
+      );
+      toast.success(
+        project.schedule_enabled ? 'Schedule paused' : 'Schedule activated'
+      );
     } catch (error: any) {
       toast.error(error.message || 'Failed to update schedule');
     }
   };
 
   const deleteProject = async () => {
-    if (!project || !window.confirm('Are you sure you want to delete this schedule? All generated images and jobs will also be deleted.')) return;
-    
+    if (
+      !project ||
+      !window.confirm(
+        'Are you sure you want to delete this schedule? All generated images and jobs will also be deleted.'
+      )
+    )
+      return;
+
     try {
       setLoading(true);
-      
+
       // Delete the project (this will cascade delete related images and jobs due to foreign key constraints)
       const { error } = await supabase
         .from('projects')
@@ -152,7 +186,7 @@ const ProjectDetail = () => {
         .eq('id', projectId);
 
       if (error) throw error;
-      
+
       toast.success('Schedule deleted successfully');
       navigate('/');
     } catch (error: any) {
@@ -164,19 +198,22 @@ const ProjectDetail = () => {
 
   const generateNow = async () => {
     if (!project) return;
-    
+
     try {
       toast.info('Starting image generation...');
-      
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: {
-          project_id: projectId,
-          manual_generation: true
+
+      const { data, error } = await supabase.functions.invoke(
+        'generate-image',
+        {
+          body: {
+            project_id: projectId,
+            manual_generation: true,
+          },
         }
-      });
+      );
 
       if (error) throw error;
-      
+
       if (data?.success) {
         toast.success('Image generated successfully!');
         // Refresh the data
@@ -192,8 +229,13 @@ const ProjectDetail = () => {
   const stats = {
     activeSchedules: project?.schedule_enabled ? 1 : 0,
     imagesGenerated: images.length,
-    queueStatus: jobs.filter(job => job.status === 'pending').length,
-    successRate: jobs.length > 0 ? (jobs.filter(job => job.status === 'completed').length / jobs.length) * 100 : 100
+    queueStatus: jobs.filter((job) => job.status === 'pending').length,
+    successRate:
+      jobs.length > 0
+        ? (jobs.filter((job) => job.status === 'completed').length /
+            jobs.length) *
+          100
+        : 100,
   };
 
   if (loading) {
@@ -236,9 +278,13 @@ const ProjectDetail = () => {
             <div className="p-1.5 rounded-lg bg-gradient-primary">
               <Bot className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-medium text-foreground">AI Image Agent</span>
+            <span className="text-sm font-medium text-foreground">
+              AI Image Agent
+            </span>
           </div>
-          <h2 className="font-semibold text-foreground truncate">{project.name}</h2>
+          <h2 className="font-semibold text-foreground truncate">
+            {project.name}
+          </h2>
           <p className="text-xs text-muted-foreground">Runway Gen-4</p>
         </div>
 
@@ -247,9 +293,13 @@ const ProjectDetail = () => {
             <SidebarMenu>
               {sidebarItems.map((item) => (
                 <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton 
+                  <SidebarMenuButton
                     onClick={() => setActiveView(item.key)}
-                    className={activeView === item.key ? 'bg-muted text-primary font-medium' : 'hover:bg-muted/50'}
+                    className={
+                      activeView === item.key
+                        ? 'bg-muted text-primary font-medium'
+                        : 'hover:bg-muted/50'
+                    }
                   >
                     <item.icon className="mr-2 h-4 w-4" />
                     <span>{item.title}</span>
@@ -279,31 +329,19 @@ const ProjectDetail = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Monitor your AI image generation tasks</p>
+          <p className="text-muted-foreground">
+            Monitor your AI image generation tasks
+          </p>
         </div>
-        <Button 
-          onClick={toggleSchedule}
-          className={project.schedule_enabled ? 'bg-destructive hover:bg-destructive/90' : 'bg-gradient-primary hover:shadow-glow'}
-        >
-          {project.schedule_enabled ? (
-            <>
-              <Pause className="mr-2 h-4 w-4" />
-              Pause Schedule
-            </>
-          ) : (
-            <>
-              <Play className="mr-2 h-4 w-4" />
-              Start Schedule
-            </>
-          )}
-        </Button>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card className="shadow-card border-border/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Schedules</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Active Schedules
+            </CardTitle>
             <Calendar className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
@@ -314,7 +352,9 @@ const ProjectDetail = () => {
 
         <Card className="shadow-card border-border/50">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Images Generated</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Images Generated
+            </CardTitle>
             <Image className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
@@ -340,7 +380,9 @@ const ProjectDetail = () => {
             <CheckCircle className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.successRate.toFixed(0)}%</div>
+            <div className="text-2xl font-bold">
+              {stats.successRate.toFixed(0)}%
+            </div>
             <p className="text-xs text-green-500">+0.8% from last week</p>
           </CardContent>
         </Card>
@@ -353,7 +395,9 @@ const ProjectDetail = () => {
             <div>
               <CardTitle>Active Schedules</CardTitle>
             </div>
-            <Button variant="outline" size="sm">View All</Button>
+            <Button variant="outline" size="sm">
+              View All
+            </Button>
           </CardHeader>
           <CardContent>
             {project.schedule_enabled ? (
@@ -365,7 +409,8 @@ const ProjectDetail = () => {
                   <div>
                     <p className="font-medium">{project.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      Every {project.generation_interval_minutes}m for {project.schedule_duration_hours}h
+                      Every {project.generation_interval_minutes}m for{' '}
+                      {project.schedule_duration_hours}h
                     </p>
                   </div>
                 </div>
@@ -374,8 +419,12 @@ const ProjectDetail = () => {
             ) : (
               <div className="text-center py-8">
                 <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-2">No active schedules</p>
-                <Button onClick={toggleSchedule} size="sm">Start your schedule</Button>
+                <p className="text-muted-foreground mb-2">
+                  No active schedules
+                </p>
+                <Button onClick={toggleSchedule} size="sm">
+                  Start your schedule
+                </Button>
               </div>
             )}
           </CardContent>
@@ -386,13 +435,18 @@ const ProjectDetail = () => {
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button onClick={toggleSchedule} className="w-full justify-start" variant="outline">
+            <Button
+              onClick={toggleSchedule}
+              className="w-full justify-start"
+              variant="outline"
+            >
               <Plus className="mr-2 h-4 w-4" />
               {project.schedule_enabled ? 'Manage Schedule' : 'Create Schedule'}
             </Button>
-            <Button 
+            <Button
               onClick={() => setActiveView('images')}
-              className="w-full justify-start" variant="outline"
+              className="w-full justify-start"
+              variant="outline"
             >
               <Images className="mr-2 h-4 w-4" />
               View Gallery
@@ -411,17 +465,32 @@ const ProjectDetail = () => {
             {jobs.length > 0 ? (
               <div className="space-y-3">
                 {jobs.slice(0, 5).map((job) => (
-                  <div key={job.id} className="flex items-center gap-3 p-2 rounded-lg border border-border">
-                    <div className={`p-1 rounded-full ${
-                      job.status === 'completed' ? 'bg-green-100' :
-                      job.status === 'running' ? 'bg-blue-100' :
-                      job.status === 'failed' ? 'bg-red-100' : 'bg-gray-100'
-                    }`}>
-                      <Activity className={`h-3 w-3 ${
-                        job.status === 'completed' ? 'text-green-600' :
-                        job.status === 'running' ? 'text-blue-600' :
-                        job.status === 'failed' ? 'text-red-600' : 'text-gray-600'
-                      }`} />
+                  <div
+                    key={job.id}
+                    className="flex items-center gap-3 p-2 rounded-lg border border-border"
+                  >
+                    <div
+                      className={`p-1 rounded-full ${
+                        job.status === 'completed'
+                          ? 'bg-green-100'
+                          : job.status === 'running'
+                          ? 'bg-blue-100'
+                          : job.status === 'failed'
+                          ? 'bg-red-100'
+                          : 'bg-gray-100'
+                      }`}
+                    >
+                      <Activity
+                        className={`h-3 w-3 ${
+                          job.status === 'completed'
+                            ? 'text-green-600'
+                            : job.status === 'running'
+                            ? 'text-blue-600'
+                            : job.status === 'failed'
+                            ? 'text-red-600'
+                            : 'text-gray-600'
+                        }`}
+                      />
                     </div>
                     <div className="flex-1">
                       <p className="text-sm font-medium">{job.status}</p>
@@ -433,7 +502,9 @@ const ProjectDetail = () => {
                 ))}
               </div>
             ) : (
-              <p className="text-center text-muted-foreground py-8">No recent activity</p>
+              <p className="text-center text-muted-foreground py-8">
+                No recent activity
+              </p>
             )}
           </CardContent>
         </Card>
@@ -444,7 +515,9 @@ const ProjectDetail = () => {
               <CardTitle>Generation Queue</CardTitle>
               <CardDescription>{stats.queueStatus} pending</CardDescription>
             </div>
-            <Button variant="outline" size="sm">Manage Queue</Button>
+            <Button variant="outline" size="sm">
+              Manage Queue
+            </Button>
           </CardHeader>
           <CardContent>
             {stats.queueStatus > 0 ? (
@@ -465,22 +538,29 @@ const ProjectDetail = () => {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Generated Images</h1>
-        <p className="text-muted-foreground">View all AI-generated images from this project</p>
+        <p className="text-muted-foreground">
+          View all AI-generated images from this project
+        </p>
       </div>
 
       {images.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {images.map((image) => (
-            <Card key={image.id} className="shadow-card border-border/50 overflow-hidden">
+            <Card
+              key={image.id}
+              className="shadow-card border-border/50 overflow-hidden"
+            >
               <div className="aspect-square bg-muted">
-                <img 
-                  src={image.image_url} 
+                <img
+                  src={image.image_url}
                   alt={image.prompt}
                   className="w-full h-full object-cover"
                 />
               </div>
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground truncate">{image.prompt}</p>
+                <p className="text-sm text-muted-foreground truncate">
+                  {image.prompt}
+                </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   {new Date(image.generated_at).toLocaleDateString()}
                 </p>
@@ -491,8 +571,12 @@ const ProjectDetail = () => {
       ) : (
         <div className="text-center py-12">
           <Image className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">No images generated yet</h3>
-          <p className="text-muted-foreground">Images will appear here automatically when your schedule runs</p>
+          <h3 className="text-lg font-medium text-foreground mb-2">
+            No images generated yet
+          </h3>
+          <p className="text-muted-foreground">
+            Images will appear here automatically when your schedule runs
+          </p>
         </div>
       )}
     </div>
@@ -503,7 +587,9 @@ const ProjectDetail = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
-          <p className="text-muted-foreground">Create and manage your image generation schedules</p>
+          <p className="text-muted-foreground">
+            Create and manage your image generation schedules
+          </p>
         </div>
         <Button className="bg-gradient-primary hover:shadow-glow">
           <Plus className="mr-2 h-4 w-4" />
@@ -517,16 +603,29 @@ const ProjectDetail = () => {
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${project.schedule_enabled ? 'bg-green-500' : 'bg-gray-400'}`} />
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      project.schedule_enabled ? 'bg-green-500' : 'bg-gray-400'
+                    }`}
+                  />
                   <h3 className="text-lg font-semibold">{project.name}</h3>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
+                    <span className="text-sm font-medium">
+                      {project.schedule_enabled ? 'Active' : 'Paused'}
+                    </span>
+                    <Switch
+                      checked={project.schedule_enabled}
+                      onCheckedChange={toggleSchedule}
+                    />
+                  </div>
                   <Button variant="outline" size="sm">
                     <Settings className="h-4 w-4" />
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
                     onClick={deleteProject}
                   >
@@ -534,7 +633,7 @@ const ProjectDetail = () => {
                   </Button>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-3 gap-4 text-sm text-muted-foreground mb-4">
                 <div>
                   <Clock className="h-3 w-3 inline mr-1" />
@@ -550,11 +649,17 @@ const ProjectDetail = () => {
               <div className="mb-4">
                 <div className="flex justify-between text-sm mb-2">
                   <span>Progress</span>
-                  <span>{images.length} / {project.max_images_to_generate || '∞'}</span>
+                  <span>
+                    {images.length} / {project.max_images_to_generate || '∞'}
+                  </span>
                 </div>
-                <Progress 
-                  value={project.max_images_to_generate ? (images.length / project.max_images_to_generate) * 100 : 0} 
-                  className="h-2" 
+                <Progress
+                  value={
+                    project.max_images_to_generate
+                      ? (images.length / project.max_images_to_generate) * 100
+                      : 0
+                  }
+                  className="h-2"
                 />
               </div>
 
@@ -570,12 +675,18 @@ const ProjectDetail = () => {
                   Created: {new Date(project.created_at).toLocaleDateString()}
                   {project.schedule_enabled && project.last_generation_at && (
                     <span className="ml-4">
-                      Next run: {new Date(new Date(project.last_generation_at).getTime() + project.generation_interval_minutes * 60000).toLocaleString()}
+                      Next run:{' '}
+                      {new Date(
+                        new Date(project.last_generation_at).getTime() +
+                          project.generation_interval_minutes * 60000
+                      ).toLocaleString()}
                     </span>
                   )}
                 </div>
-                <Badge variant={project.schedule_enabled ? "default" : "secondary"}>
-                  {project.schedule_enabled ? "Active" : "Paused"}
+                <Badge
+                  variant={project.schedule_enabled ? 'default' : 'secondary'}
+                >
+                  {project.schedule_enabled ? 'Active' : 'Paused'}
                 </Badge>
               </div>
             </CardContent>
@@ -590,7 +701,9 @@ const ProjectDetail = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-          <p className="text-muted-foreground">Manage your account and application preferences</p>
+          <p className="text-muted-foreground">
+            Manage your account and application preferences
+          </p>
         </div>
       </div>
 
@@ -617,7 +730,9 @@ const ProjectDetail = () => {
                 <label className="text-sm font-medium">Available Tokens</label>
                 <p className="text-sm text-muted-foreground">Unlimited</p>
               </div>
-              <Button variant="outline" size="sm">Upgrade Plan</Button>
+              <Button variant="outline" size="sm">
+                Upgrade Plan
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -634,11 +749,12 @@ const ProjectDetail = () => {
             <div>
               <label className="text-sm font-medium">Replicate API Key</label>
               <p className="text-xs text-muted-foreground mb-2">
-                Your API key is used to authenticate with Replicate's image models
+                Your API key is used to authenticate with Replicate's image
+                models
               </p>
               <div className="flex gap-2">
-                <input 
-                  type="password" 
+                <input
+                  type="password"
                   placeholder="Enter your Replicate API key..."
                   className="flex-1 px-3 py-2 text-sm border border-border rounded-md bg-background"
                 />
@@ -666,19 +782,27 @@ const ProjectDetail = () => {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm font-medium">Active Schedules</p>
-                <p className="text-2xl font-bold text-primary">{project?.schedule_enabled ? 1 : 0}</p>
+                <p className="text-2xl font-bold text-primary">
+                  {project?.schedule_enabled ? 1 : 0}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium">Total Images</p>
-                <p className="text-2xl font-bold text-primary">{images.length}</p>
+                <p className="text-2xl font-bold text-primary">
+                  {images.length}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium">Queue Items</p>
-                <p className="text-2xl font-bold text-primary">{jobs.filter(job => job.status === 'pending').length}</p>
+                <p className="text-2xl font-bold text-primary">
+                  {jobs.filter((job) => job.status === 'pending').length}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium">Success Rate</p>
-                <p className="text-2xl font-bold text-primary">{stats.successRate.toFixed(0)}%</p>
+                <p className="text-2xl font-bold text-primary">
+                  {stats.successRate.toFixed(0)}%
+                </p>
               </div>
             </div>
             <p className="text-xs text-muted-foreground mt-4">
@@ -707,7 +831,7 @@ const ProjectDetail = () => {
                 Import Configuration
               </Button>
             </div>
-            
+
             <div className="border-t pt-3 space-y-2">
               <Button variant="destructive" className="w-full justify-start">
                 Clear Failed Queue Items
@@ -753,8 +877,12 @@ const ProjectDetail = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Generation Queue</h1>
-          <p className="text-muted-foreground">Monitor and manage your image generation queue</p>
+          <h1 className="text-2xl font-bold text-foreground">
+            Generation Queue
+          </h1>
+          <p className="text-muted-foreground">
+            Monitor and manage your image generation queue
+          </p>
         </div>
         <Button variant="outline">
           <Settings className="mr-2 h-4 w-4" />
@@ -765,7 +893,9 @@ const ProjectDetail = () => {
       <Card className="shadow-card border-border/50">
         <CardHeader>
           <CardTitle>Queue Items</CardTitle>
-          <CardDescription>{jobs.filter(job => job.status === 'pending').length} pending</CardDescription>
+          <CardDescription>
+            {jobs.filter((job) => job.status === 'pending').length} pending
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {jobs.length > 0 ? (
@@ -787,11 +917,17 @@ const ProjectDetail = () => {
                     </TableCell>
                     <TableCell>1080p • 1:1</TableCell>
                     <TableCell>
-                      <Badge variant={
-                        job.status === 'completed' ? 'default' :
-                        job.status === 'running' ? 'secondary' :
-                        job.status === 'failed' ? 'destructive' : 'outline'
-                      }>
+                      <Badge
+                        variant={
+                          job.status === 'completed'
+                            ? 'default'
+                            : job.status === 'running'
+                            ? 'secondary'
+                            : job.status === 'failed'
+                            ? 'destructive'
+                            : 'outline'
+                        }
+                      >
                         {job.status}
                       </Badge>
                     </TableCell>
@@ -803,7 +939,11 @@ const ProjectDetail = () => {
                         <Button variant="outline" size="sm">
                           <Settings className="h-3 w-3" />
                         </Button>
-                        <Button variant="outline" size="sm" className="text-destructive">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive"
+                        >
                           <AlertCircle className="h-3 w-3" />
                         </Button>
                       </div>
@@ -815,8 +955,13 @@ const ProjectDetail = () => {
           ) : (
             <div className="text-center py-12">
               <Clock className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No items in queue</h3>
-              <p className="text-muted-foreground">Queue items will appear here when your schedule creates new generation jobs</p>
+              <h3 className="text-lg font-medium text-foreground mb-2">
+                No items in queue
+              </h3>
+              <p className="text-muted-foreground">
+                Queue items will appear here when your schedule creates new
+                generation jobs
+              </p>
             </div>
           )}
         </CardContent>
@@ -856,11 +1001,9 @@ const ProjectDetail = () => {
                 </div>
               </div>
             </header>
-            
+
             {/* Content */}
-            <div className="p-6">
-              {renderActiveView()}
-            </div>
+            <div className="p-6">{renderActiveView()}</div>
           </main>
         </div>
       </SidebarProvider>
