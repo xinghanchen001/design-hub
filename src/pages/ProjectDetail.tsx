@@ -24,7 +24,8 @@ import {
   AlertCircle,
   Plus,
   Images,
-  Zap
+  Zap,
+  Trash2
 } from 'lucide-react';
 
 interface Project {
@@ -135,6 +136,29 @@ const ProjectDetail = () => {
       toast.success(project.schedule_enabled ? 'Schedule paused' : 'Schedule activated');
     } catch (error: any) {
       toast.error(error.message || 'Failed to update schedule');
+    }
+  };
+
+  const deleteProject = async () => {
+    if (!project || !window.confirm('Are you sure you want to delete this schedule? All generated images and jobs will also be deleted.')) return;
+    
+    try {
+      setLoading(true);
+      
+      // Delete the project (this will cascade delete related images and jobs due to foreign key constraints)
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+
+      if (error) throw error;
+      
+      toast.success('Schedule deleted successfully');
+      navigate('/');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete schedule');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -500,8 +524,13 @@ const ProjectDetail = () => {
                   <Button variant="outline" size="sm">
                     <Settings className="h-4 w-4" />
                   </Button>
-                  <Button variant="outline" size="sm" className="text-destructive">
-                    <AlertCircle className="h-4 w-4" />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={deleteProject}
+                  >
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
