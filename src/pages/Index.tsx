@@ -149,6 +149,7 @@ const Index = () => {
             <h3 className="text-2xl font-bold text-foreground">Ready to Get Started?</h3>
             <Button 
               size="lg"
+              onClick={() => navigate('/create-project')}
               className="bg-gradient-primary hover:shadow-glow transition-all duration-300 px-8 py-6 text-lg"
             >
               Create Your First AI Agent
