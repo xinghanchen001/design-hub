@@ -366,10 +366,6 @@ const ProjectDetail = () => {
               <Plus className="mr-2 h-4 w-4" />
               {project.schedule_enabled ? 'Manage Schedule' : 'Create Schedule'}
             </Button>
-            <Button onClick={generateNow} className="w-full justify-start" variant="outline">
-              <Zap className="mr-2 h-4 w-4" />
-              Generate Now
-            </Button>
             <Button 
               onClick={() => setActiveView('images')}
               className="w-full justify-start" variant="outline"
@@ -443,15 +439,9 @@ const ProjectDetail = () => {
 
   const ImagesView = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Generated Images</h1>
-          <p className="text-muted-foreground">View all AI-generated images from this project</p>
-        </div>
-        <Button onClick={generateNow} className="bg-gradient-primary hover:shadow-glow">
-          <Plus className="mr-2 h-4 w-4" />
-          Generate New
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Generated Images</h1>
+        <p className="text-muted-foreground">View all AI-generated images from this project</p>
       </div>
 
       {images.length > 0 ? (
@@ -478,11 +468,7 @@ const ProjectDetail = () => {
         <div className="text-center py-12">
           <Image className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">No images generated yet</h3>
-          <p className="text-muted-foreground mb-4">Start your schedule or generate manually to see images here</p>
-          <Button onClick={generateNow} className="bg-gradient-primary hover:shadow-glow">
-            <Zap className="mr-2 h-4 w-4" />
-            Generate First Image
-          </Button>
+          <p className="text-muted-foreground">Images will appear here automatically when your schedule runs</p>
         </div>
       )}
     </div>
@@ -801,11 +787,7 @@ const ProjectDetail = () => {
             <div className="text-center py-12">
               <Clock className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium text-foreground mb-2">No items in queue</h3>
-              <p className="text-muted-foreground mb-4">Start a schedule or generate manually to see queue items</p>
-              <Button onClick={generateNow} className="bg-gradient-primary hover:shadow-glow">
-                <Zap className="mr-2 h-4 w-4" />
-                Generate Now
-              </Button>
+              <p className="text-muted-foreground">Queue items will appear here when your schedule creates new generation jobs</p>
             </div>
           )}
         </CardContent>
