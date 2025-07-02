@@ -152,7 +152,7 @@ const Index = () => {
               onClick={() => navigate('/create-project')}
               className="bg-gradient-primary hover:shadow-glow transition-all duration-300 px-8 py-6 text-lg"
             >
-              Create Your First AI Agent
+              Create Schedule
             </Button>
           </div>
         </div>
