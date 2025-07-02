@@ -61,99 +61,158 @@ const Index = () => {
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="space-y-8">
-          {/* Welcome Section */}
-          <div className="text-center space-y-4 max-w-3xl mx-auto">
-            <h2 className="text-4xl font-bold text-foreground">
-              Your AI Image Generation
-              <span className="bg-gradient-accent bg-clip-text text-transparent"> Dashboard</span>
-            </h2>
-            <p className="text-xl text-muted-foreground">
-              Create and manage AI agents that automatically generate images based on your prompts and schedules.
-            </p>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
-            <Card className="shadow-card border-border/50 hover:shadow-glow transition-all duration-300 cursor-pointer">
-              <CardHeader className="text-center">
-                <div className="p-3 rounded-full bg-gradient-primary w-fit mx-auto">
-                  <Bot className="h-8 w-8 text-primary-foreground" />
-                </div>
-                <CardTitle>Create AI Agent</CardTitle>
-                <CardDescription>
-                  Set up a new automated image generation agent
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="shadow-card border-border/50 hover:shadow-glow transition-all duration-300 cursor-pointer">
-              <CardHeader className="text-center">
-                <div className="p-3 rounded-full bg-gradient-accent w-fit mx-auto">
-                  <Image className="h-8 w-8 text-primary-foreground" />
-                </div>
-                <CardTitle>Generated Images</CardTitle>
-                <CardDescription>
-                  View and manage your AI-generated image collection
-                </CardDescription>
-              </CardHeader>
-            </Card>
-
-            <Card className="shadow-card border-border/50 hover:shadow-glow transition-all duration-300 cursor-pointer">
-              <CardHeader className="text-center">
-                <div className="p-3 rounded-full bg-gradient-primary w-fit mx-auto">
-                  <Settings className="h-8 w-8 text-primary-foreground" />
-                </div>
-                <CardTitle>Agent Settings</CardTitle>
-                <CardDescription>
-                  Configure schedules, prompts, and generation limits
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          </div>
-
-          {/* Features Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto mt-12">
-            <div className="flex items-start gap-4 p-6 rounded-xl bg-card/50 border border-border/50">
-              <Sparkles className="h-8 w-8 text-ai-accent flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="font-semibold text-foreground mb-2">Smart Scheduling</h3>
-                <p className="text-sm text-muted-foreground">
-                  Set up automated generation with custom intervals and duration limits
-                </p>
-              </div>
+          {/* Dashboard Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-foreground">Dashboard</h2>
+              <p className="text-muted-foreground">Monitor your AI image generation tasks</p>
             </div>
-
-            <div className="flex items-start gap-4 p-6 rounded-xl bg-card/50 border border-border/50">
-              <Zap className="h-8 w-8 text-ai-accent flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="font-semibold text-foreground mb-2">Reference Training</h3>
-                <p className="text-sm text-muted-foreground">
-                  Upload reference images to train your AI for consistent style and quality
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 p-6 rounded-xl bg-card/50 border border-border/50">
-              <Clock className="h-8 w-8 text-ai-accent flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="font-semibold text-foreground mb-2">Generation Limits</h3>
-                <p className="text-sm text-muted-foreground">
-                  Control costs with maximum image generation limits and monitoring
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* CTA Section */}
-          <div className="text-center space-y-6 py-12">
-            <h3 className="text-2xl font-bold text-foreground">Ready to Get Started?</h3>
             <Button 
-              size="lg"
               onClick={() => navigate('/create-project')}
-              className="bg-gradient-primary hover:shadow-glow transition-all duration-300 px-8 py-6 text-lg"
+              className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
             >
+              <Bot className="h-4 w-4 mr-2" />
               Create Schedule
             </Button>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <Card className="shadow-card border-border/50">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-full bg-gradient-primary">
+                    <Bot className="h-6 w-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Active Schedules</p>
+                    <p className="text-2xl font-bold text-foreground">0</p>
+                    <p className="text-xs text-muted-foreground">12% from last week</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card border-border/50">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-full bg-gradient-accent">
+                    <Image className="h-6 w-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Images Generated</p>
+                    <p className="text-2xl font-bold text-foreground">0</p>
+                    <p className="text-xs text-muted-foreground">24% from last week</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card border-border/50">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-full bg-gradient-primary">
+                    <Clock className="h-6 w-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Queue Status</p>
+                    <p className="text-2xl font-bold text-foreground">0</p>
+                    <p className="text-xs text-muted-foreground">pending generation</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card border-border/50">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-full bg-gradient-accent">
+                    <Zap className="h-6 w-6 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Success Rate</p>
+                    <p className="text-2xl font-bold text-foreground">100%</p>
+                    <p className="text-xs text-muted-foreground">0.8% from last week</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Content Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Active Schedules */}
+            <div className="lg:col-span-2">
+              <Card className="shadow-card border-border/50">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <CardTitle>Active Schedules</CardTitle>
+                  <Button variant="outline" size="sm">View All</Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center py-8">
+                    <Bot className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground mb-2">No active schedules</p>
+                    <p className="text-sm text-muted-foreground">Create your first schedule</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Quick Actions */}
+            <Card className="shadow-card border-border/50">
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => navigate('/create-project')}
+                >
+                  <Bot className="h-4 w-4 mr-2" />
+                  Create Schedule
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <Zap className="h-4 w-4 mr-2" />
+                  Generate Now
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <Image className="h-4 w-4 mr-2" />
+                  View Gallery
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Recent Activity and Queue */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="shadow-card border-border/50">
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No recent activity</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-card border-border/50">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>Generation Queue</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">0 pending</span>
+                  <Button variant="outline" size="sm">Manage Queue</Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No items in queue</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </main>
