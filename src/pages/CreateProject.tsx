@@ -213,6 +213,9 @@ const CreateProject = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="1">Every 1 minute</SelectItem>
+                      <SelectItem value="5">Every 5 minutes</SelectItem>
+                      <SelectItem value="10">Every 10 minutes</SelectItem>
                       <SelectItem value="15">Every 15 minutes</SelectItem>
                       <SelectItem value="30">Every 30 minutes</SelectItem>
                       <SelectItem value="60">Every hour</SelectItem>
