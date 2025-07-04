@@ -84,6 +84,10 @@ interface GeneratedImage {
   image_url: string;
   prompt: string;
   generated_at: string;
+  project_id: string;
+  project_name?: string | null; // Project name, null if project deleted
+  model_used?: string;
+  generation_time_seconds?: number;
 }
 
 const ProjectDetail = () => {
@@ -96,6 +100,7 @@ const ProjectDetail = () => {
   const [images, setImages] = useState<GeneratedImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState('dashboard');
+  const [userProjects, setUserProjects] = useState<Project[]>([]);
 
   useEffect(() => {
     if (!user || !projectId) return;
@@ -105,7 +110,7 @@ const ProjectDetail = () => {
 
   const fetchProjectData = async () => {
     try {
-      // Fetch project details
+      // Fetch current project details
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
@@ -116,7 +121,17 @@ const ProjectDetail = () => {
       if (projectError) throw projectError;
       setProject(projectData);
 
-      // Fetch generation jobs
+      // Fetch ALL user projects for schedules view
+      const { data: allProjectsData, error: allProjectsError } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (allProjectsError) throw allProjectsError;
+      setUserProjects(allProjectsData || []);
+
+      // Fetch generation jobs for this project
       const { data: jobsData, error: jobsError } = await supabase
         .from('generation_jobs')
         .select('*')
@@ -127,16 +142,30 @@ const ProjectDetail = () => {
       if (jobsError) throw jobsError;
       setJobs(jobsData || []);
 
-      // Fetch generated images
+      // Fetch ALL generated images for this user (not just current project)
       const { data: imagesData, error: imagesError } = await supabase
         .from('generated_images')
-        .select('*')
-        .eq('project_id', projectId)
+        .select(
+          `
+          *,
+          projects:project_id (
+            name
+          )
+        `
+        )
+        .eq('user_id', user?.id)
         .order('generated_at', { ascending: false })
-        .limit(20);
+        .limit(50);
 
       if (imagesError) throw imagesError;
-      setImages(imagesData || []);
+
+      // Transform the data to include project names
+      const transformedImages = (imagesData || []).map((image) => ({
+        ...image,
+        project_name: image.projects?.name || null, // null if project deleted
+      }));
+
+      setImages(transformedImages || []);
     } catch (error: any) {
       toast.error(error.message || 'Failed to load project data');
       navigate('/');
@@ -227,7 +256,9 @@ const ProjectDetail = () => {
   };
 
   const stats = {
-    activeSchedules: project?.schedule_enabled ? 1 : 0,
+    activeSchedules: userProjects.filter(
+      (p) => p.schedule_enabled && p.is_active
+    ).length,
     imagesGenerated: images.length,
     queueStatus: jobs.filter((job) => job.status === 'pending').length,
     successRate:
@@ -395,26 +426,62 @@ const ProjectDetail = () => {
             <div>
               <CardTitle>Active Schedules</CardTitle>
             </div>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setActiveView('schedules')}
+            >
               View All
             </Button>
           </CardHeader>
           <CardContent>
-            {project.schedule_enabled ? (
-              <div className="flex items-center justify-between p-4 border border-border rounded-lg">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-full bg-green-100">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
+            {stats.activeSchedules > 0 ? (
+              <div className="space-y-3">
+                {userProjects
+                  .filter((p) => p.schedule_enabled && p.is_active)
+                  .slice(0, 3) // Show max 3 active schedules
+                  .map((activeProject) => (
+                    <div
+                      key={activeProject.id}
+                      className={`flex items-center justify-between p-4 border border-border rounded-lg ${
+                        activeProject.id === projectId ? 'bg-muted/30' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-full bg-green-100">
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{activeProject.name}</p>
+                            {activeProject.id === projectId && (
+                              <Badge variant="outline" className="text-xs">
+                                Current
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            Every {activeProject.generation_interval_minutes}m
+                            for {activeProject.schedule_duration_hours}h
+                          </p>
+                        </div>
+                      </div>
+                      <Badge variant="secondary">Active</Badge>
+                    </div>
+                  ))}
+
+                {/* Show "View All" if there are more than 3 active schedules */}
+                {stats.activeSchedules > 3 && (
+                  <div className="text-center pt-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setActiveView('schedules')}
+                    >
+                      View {stats.activeSchedules - 3} more active schedules
+                    </Button>
                   </div>
-                  <div>
-                    <p className="font-medium">{project.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      Every {project.generation_interval_minutes}m for{' '}
-                      {project.schedule_duration_hours}h
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="secondary">Active</Badge>
+                )}
               </div>
             ) : (
               <div className="text-center py-8">
@@ -422,8 +489,8 @@ const ProjectDetail = () => {
                 <p className="text-muted-foreground mb-2">
                   No active schedules
                 </p>
-                <Button onClick={toggleSchedule} size="sm">
-                  Start your schedule
+                <Button onClick={() => navigate('/create-project')} size="sm">
+                  Create your first schedule
                 </Button>
               </div>
             )}
@@ -436,12 +503,22 @@ const ProjectDetail = () => {
           </CardHeader>
           <CardContent className="space-y-3">
             <Button
-              onClick={toggleSchedule}
+              onClick={() => {
+                if (project.schedule_enabled) {
+                  // If schedule is enabled, toggle it off/on
+                  toggleSchedule();
+                } else {
+                  // If no schedule is enabled, create a new schedule
+                  navigate('/create-project');
+                }
+              }}
               className="w-full justify-start"
               variant="outline"
             >
               <Plus className="mr-2 h-4 w-4" />
-              {project.schedule_enabled ? 'Manage Schedule' : 'Create Schedule'}
+              {project.schedule_enabled
+                ? 'Toggle Schedule'
+                : 'Create New Schedule'}
             </Button>
             <Button
               onClick={() => setActiveView('images')}
@@ -537,9 +614,11 @@ const ProjectDetail = () => {
   const ImagesView = () => (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Generated Images</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          All Generated Images
+        </h1>
         <p className="text-muted-foreground">
-          View all AI-generated images from this project
+          View all AI-generated images from all your schedules
         </p>
       </div>
 
@@ -550,20 +629,51 @@ const ProjectDetail = () => {
               key={image.id}
               className="shadow-card border-border/50 overflow-hidden"
             >
-              <div className="aspect-square bg-muted">
+              <div className="aspect-square bg-muted relative">
                 <img
                   src={image.image_url}
                   alt={image.prompt}
                   className="w-full h-full object-cover"
                 />
+                {/* Model badge */}
+                {image.model_used && (
+                  <div className="absolute top-2 right-2">
+                    <Badge variant="secondary" className="text-xs">
+                      {image.model_used === 'flux-kontext-max'
+                        ? 'Edit'
+                        : 'Generate'}
+                    </Badge>
+                  </div>
+                )}
               </div>
               <CardContent className="p-4">
-                <p className="text-sm text-muted-foreground truncate">
-                  {image.prompt}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {new Date(image.generated_at).toLocaleDateString()}
-                </p>
+                <div className="space-y-2">
+                  {/* Project name or "Deleted Schedule" */}
+                  <div className="flex items-center gap-2">
+                    <Bot className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {image.project_name || '(Deleted Schedule)'}
+                    </span>
+                  </div>
+
+                  {/* Prompt */}
+                  <p
+                    className="text-sm text-foreground line-clamp-2"
+                    title={image.prompt}
+                  >
+                    {image.prompt}
+                  </p>
+
+                  {/* Date and generation time */}
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {new Date(image.generated_at).toLocaleDateString()}
+                    </span>
+                    {image.generation_time_seconds && (
+                      <span>{image.generation_time_seconds.toFixed(1)}s</span>
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -575,7 +685,7 @@ const ProjectDetail = () => {
             No images generated yet
           </h3>
           <p className="text-muted-foreground">
-            Images will appear here automatically when your schedule runs
+            Images will appear here automatically when your schedules run
           </p>
         </div>
       )}
@@ -591,106 +701,199 @@ const ProjectDetail = () => {
             Create and manage your image generation schedules
           </p>
         </div>
-        <Button className="bg-gradient-primary hover:shadow-glow">
+        <Button onClick={() => navigate('/create-project')}>
           <Plus className="mr-2 h-4 w-4" />
           New Schedule
         </Button>
       </div>
 
       <div className="space-y-4">
-        {project && (
-          <Card className="shadow-card border-border/50">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-3 h-3 rounded-full ${
-                      project.schedule_enabled ? 'bg-green-500' : 'bg-gray-400'
-                    }`}
-                  />
-                  <h3 className="text-lg font-semibold">{project.name}</h3>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
-                    <span className="text-sm font-medium">
-                      {project.schedule_enabled ? 'Active' : 'Paused'}
-                    </span>
-                    <Switch
-                      checked={project.schedule_enabled}
-                      onCheckedChange={toggleSchedule}
+        {userProjects.length > 0 ? (
+          userProjects.map((project) => (
+            <Card key={project.id} className="shadow-card border-border/50">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`w-3 h-3 rounded-full ${
+                        project.schedule_enabled && project.is_active
+                          ? 'bg-green-500'
+                          : 'bg-gray-400'
+                      }`}
                     />
+                    <h3 className="text-lg font-semibold">{project.name}</h3>
+                    {project.id === projectId && (
+                      <Badge variant="secondary" className="text-xs">
+                        Current
+                      </Badge>
+                    )}
                   </div>
-                  <Button variant="outline" size="sm">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    onClick={deleteProject}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
+                      <span className="text-sm font-medium">
+                        {project.schedule_enabled && project.is_active
+                          ? 'Active'
+                          : 'Paused'}
+                      </span>
+                      <Switch
+                        checked={project.schedule_enabled && project.is_active}
+                        onCheckedChange={async () => {
+                          try {
+                            const { error } = await supabase
+                              .from('projects')
+                              .update({
+                                schedule_enabled: !(
+                                  project.schedule_enabled && project.is_active
+                                ),
+                                is_active: !(
+                                  project.schedule_enabled && project.is_active
+                                ),
+                              })
+                              .eq('id', project.id);
+
+                            if (error) throw error;
+
+                            // Refresh data
+                            fetchProjectData();
+                            toast.success(
+                              project.schedule_enabled && project.is_active
+                                ? 'Schedule paused'
+                                : 'Schedule activated'
+                            );
+                          } catch (error: any) {
+                            toast.error(
+                              error.message || 'Failed to update schedule'
+                            );
+                          }
+                        }}
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/project/${project.id}`)}
+                    >
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            `Are you sure you want to delete "${project.name}"? All generated images and jobs will also be deleted.`
+                          )
+                        )
+                          return;
+
+                        try {
+                          const { error } = await supabase
+                            .from('projects')
+                            .delete()
+                            .eq('id', project.id);
+
+                          if (error) throw error;
+
+                          toast.success('Schedule deleted successfully');
+
+                          // If we deleted the current project, navigate to first remaining project or home
+                          if (project.id === projectId) {
+                            const remaining = userProjects.filter(
+                              (p) => p.id !== project.id
+                            );
+                            if (remaining.length > 0) {
+                              navigate(`/project/${remaining[0].id}`);
+                            } else {
+                              navigate('/');
+                            }
+                          } else {
+                            fetchProjectData(); // Refresh the list
+                          }
+                        } catch (error: any) {
+                          toast.error(
+                            error.message || 'Failed to delete schedule'
+                          );
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-4">
+                  <div>
+                    <Clock className="h-3 w-3 inline mr-1" />
+                    Every {project.generation_interval_minutes}m
+                  </div>
+                  <div>
+                    <Images className="h-3 w-3 inline mr-1" />
+                    Max: {project.max_images_to_generate || 'Unlimited'}
+                  </div>
+                  <div>
+                    <Zap className="h-3 w-3 inline mr-1" />
+                    Duration: {project.schedule_duration_hours}h
+                  </div>
+                  <div>
+                    <Activity className="h-3 w-3 inline mr-1" />
+                    {project.reference_image_url
+                      ? 'With reference'
+                      : 'Text-to-image'}
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <p className="text-sm font-medium mb-2">Prompt</p>
+                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-2">
+                    {project.prompt || 'No prompt set'}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
+                    Created: {new Date(project.created_at).toLocaleDateString()}
+                    {project.schedule_enabled &&
+                      project.is_active &&
+                      project.last_generation_at && (
+                        <span className="ml-4">
+                          Next run:{' '}
+                          {new Date(
+                            new Date(project.last_generation_at).getTime() +
+                              project.generation_interval_minutes * 60000
+                          ).toLocaleString()}
+                        </span>
+                      )}
+                  </div>
+                  <Badge
+                    variant={
+                      project.schedule_enabled && project.is_active
+                        ? 'default'
+                        : 'secondary'
+                    }
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                    {project.schedule_enabled && project.is_active
+                      ? 'Active'
+                      : 'Paused'}
+                  </Badge>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 text-sm text-muted-foreground mb-4">
-                <div>
-                  <Clock className="h-3 w-3 inline mr-1" />
-                  Every {project.generation_interval_minutes}m
-                </div>
-                <div>
-                  <Images className="h-3 w-3 inline mr-1" />
-                  Target: {project.max_images_to_generate || 'Unlimited'} images
-                </div>
-                <div>1080p • 1:1</div>
-              </div>
-
-              <div className="mb-4">
-                <div className="flex justify-between text-sm mb-2">
-                  <span>Progress</span>
-                  <span>
-                    {images.length} / {project.max_images_to_generate || '∞'}
-                  </span>
-                </div>
-                <Progress
-                  value={
-                    project.max_images_to_generate
-                      ? (images.length / project.max_images_to_generate) * 100
-                      : 0
-                  }
-                  className="h-2"
-                />
-              </div>
-
-              <div className="mb-4">
-                <p className="text-sm font-medium mb-2">Prompt</p>
-                <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
-                  {project.prompt || 'No prompt set'}
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                  Created: {new Date(project.created_at).toLocaleDateString()}
-                  {project.schedule_enabled && project.last_generation_at && (
-                    <span className="ml-4">
-                      Next run:{' '}
-                      {new Date(
-                        new Date(project.last_generation_at).getTime() +
-                          project.generation_interval_minutes * 60000
-                      ).toLocaleString()}
-                    </span>
-                  )}
-                </div>
-                <Badge
-                  variant={project.schedule_enabled ? 'default' : 'secondary'}
-                >
-                  {project.schedule_enabled ? 'Active' : 'Paused'}
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <div className="text-center py-12">
+            <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">
+              No schedules created yet
+            </h3>
+            <p className="text-muted-foreground mb-4">
+              Create your first AI image generation schedule to get started
+            </p>
+            <Button onClick={() => navigate('/create-project')}>
+              <Plus className="mr-2 h-4 w-4" />
+              Create Your First Schedule
+            </Button>
+          </div>
         )}
       </div>
     </div>
@@ -764,9 +967,7 @@ const ProjectDetail = () => {
               <label className="text-sm font-medium">API Status</label>
               <p className="text-sm text-green-600">Configured</p>
             </div>
-            <Button className="w-full bg-gradient-primary hover:shadow-glow">
-              Save API Configuration
-            </Button>
+            <Button className="w-full">Save API Configuration</Button>
           </CardContent>
         </Card>
 
