@@ -24,6 +24,7 @@ export type Database = {
           replicate_prediction_id: string | null;
           seed: number | null;
           storage_path: string | null;
+          user_id: string | null;
         };
         Insert: {
           aspect_ratio?: string | null;
@@ -39,6 +40,7 @@ export type Database = {
           replicate_prediction_id?: string | null;
           seed?: number | null;
           storage_path?: string | null;
+          user_id?: string | null;
         };
         Update: {
           aspect_ratio?: string | null;
@@ -54,6 +56,7 @@ export type Database = {
           replicate_prediction_id?: string | null;
           seed?: number | null;
           storage_path?: string | null;
+          user_id?: string | null;
         };
         Relationships: [
           {
@@ -118,6 +121,39 @@ export type Database = {
             referencedColumns: ['id'];
           }
         ];
+      };
+      journal_blog_posts: {
+        Row: {
+          ai_response: string;
+          created_at: string;
+          id: string;
+          system_prompt: string;
+          title: string;
+          updated_at: string;
+          user_id: string;
+          user_prompt: string;
+        };
+        Insert: {
+          ai_response: string;
+          created_at?: string;
+          id?: string;
+          system_prompt: string;
+          title: string;
+          updated_at?: string;
+          user_id: string;
+          user_prompt: string;
+        };
+        Update: {
+          ai_response?: string;
+          created_at?: string;
+          id?: string;
+          system_prompt?: string;
+          title?: string;
+          updated_at?: string;
+          user_id?: string;
+          user_prompt?: string;
+        };
+        Relationships: [];
       };
       projects: {
         Row: {
@@ -217,14 +253,72 @@ export type Database = {
           }
         ];
       };
+      user_generation_locks: {
+        Row: {
+          created_at: string;
+          generation_job_id: string | null;
+          locked_at: string;
+          project_id: string | null;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          generation_job_id?: string | null;
+          locked_at?: string;
+          project_id?: string | null;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          generation_job_id?: string | null;
+          locked_at?: string;
+          project_id?: string | null;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'user_generation_locks_generation_job_id_fkey';
+            columns: ['generation_job_id'];
+            isOneToOne: false;
+            referencedRelation: 'generation_jobs';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'user_generation_locks_project_id_fkey';
+            columns: ['project_id'];
+            isOneToOne: false;
+            referencedRelation: 'projects';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
+      acquire_user_generation_lock: {
+        Args: {
+          p_user_id: string;
+          p_project_id: string;
+          p_generation_job_id: string;
+        };
+        Returns: boolean;
+      };
       create_scheduled_jobs: {
         Args: Record<PropertyKey, never>;
         Returns: undefined;
+      };
+      release_user_generation_lock: {
+        Args: { p_user_id: string };
+        Returns: boolean;
+      };
+      user_has_active_generation: {
+        Args: { p_user_id: string };
+        Returns: boolean;
       };
     };
     Enums: {
