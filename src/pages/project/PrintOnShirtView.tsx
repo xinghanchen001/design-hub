@@ -85,6 +85,8 @@ const PrintOnShirtView = () => {
   const [schedules, setSchedules] = useState<PrintOnShirtSchedule[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<PrintOnShirtSchedule | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Form state
@@ -224,6 +226,99 @@ const PrintOnShirtView = () => {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleEditSchedule = (schedule: PrintOnShirtSchedule) => {
+    setEditingSchedule(schedule);
+    setFormData({
+      name: schedule.name,
+      description: schedule.description || '',
+      prompt: schedule.prompt,
+      input_image_1_url: schedule.input_image_1_url,
+      input_image_2_url: schedule.input_image_2_url,
+      aspect_ratio: schedule.aspect_ratio,
+      schedule_enabled: schedule.schedule_enabled,
+      schedule_duration_hours: schedule.schedule_duration_hours,
+      max_images_to_generate: schedule.max_images_to_generate,
+      generation_interval_minutes: schedule.generation_interval_minutes,
+    });
+    setIsEditing(true);
+  };
+
+  const handleUpdateSchedule = async () => {
+    if (!editingSchedule) return;
+
+    if (!formData.name.trim() || !formData.prompt.trim()) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    if (!formData.input_image_1_url || !formData.input_image_2_url) {
+      toast.error('Please upload both reference images');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const { error: updateError } = await supabase
+        .from('print_on_shirt_schedules')
+        .update({
+          name: formData.name,
+          description: formData.description || null,
+          prompt: formData.prompt,
+          input_image_1_url: formData.input_image_1_url,
+          input_image_2_url: formData.input_image_2_url,
+          aspect_ratio: formData.aspect_ratio,
+          schedule_enabled: formData.schedule_enabled,
+          schedule_duration_hours: formData.schedule_duration_hours,
+          max_images_to_generate: formData.max_images_to_generate,
+          generation_interval_minutes: formData.generation_interval_minutes,
+        })
+        .eq('id', editingSchedule.id);
+
+      if (updateError) throw updateError;
+
+      // Reset form and editing state
+      setFormData({
+        name: '',
+        description: '',
+        prompt: '',
+        input_image_1_url: '',
+        input_image_2_url: '',
+        aspect_ratio: '1:1',
+        schedule_enabled: true,
+        schedule_duration_hours: 24,
+        max_images_to_generate: 10,
+        generation_interval_minutes: 60,
+      });
+      setIsEditing(false);
+      setEditingSchedule(null);
+      toast.success('Schedule updated successfully');
+
+      // Reload schedules
+      await loadSchedules();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update schedule');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditingSchedule(null);
+    setFormData({
+      name: '',
+      description: '',
+      prompt: '',
+      input_image_1_url: '',
+      input_image_2_url: '',
+      aspect_ratio: '1:1',
+      schedule_enabled: true,
+      schedule_duration_hours: 24,
+      max_images_to_generate: 10,
+      generation_interval_minutes: 60,
+    });
   };
 
   if (loading) {
@@ -548,6 +643,301 @@ const PrintOnShirtView = () => {
         </Card>
       )}
 
+      {/* Edit Schedule Form */}
+      {isEditing && editingSchedule && (
+        <Card className="shadow-card border-border/50">
+          <CardHeader>
+            <CardTitle>Edit Print on Shirt Schedule</CardTitle>
+            <CardDescription>
+              Update your automated generation schedule settings
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Basic Information */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Schedule Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, name: e.target.value }))
+                  }
+                  placeholder="e.g., Cool T-Shirt Designs"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-aspect_ratio">Aspect Ratio</Label>
+                <Select
+                  value={formData.aspect_ratio}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({ ...prev, aspect_ratio: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select aspect ratio" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {aspectRatios.map((ratio) => (
+                      <SelectItem key={ratio.value} value={ratio.value}>
+                        {ratio.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="Describe what this schedule will generate..."
+                rows={3}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-prompt">Combination Prompt *</Label>
+              <Textarea
+                id="edit-prompt"
+                value={formData.prompt}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, prompt: e.target.value }))
+                }
+                placeholder="e.g., Put the logo from the first image on the shirt from the second image, make it look professional and stylish"
+                rows={4}
+              />
+            </div>
+
+            {/* Image Upload Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Image 1 */}
+              <div className="space-y-4">
+                <Label>Reference Image 1 *</Label>
+                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                  {formData.input_image_1_url ? (
+                    <div className="space-y-4">
+                      <img
+                        src={formData.input_image_1_url}
+                        alt="Reference 1"
+                        className="max-w-full h-32 mx-auto object-cover rounded-lg"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            input_image_1_url: '',
+                          }))
+                        }
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">
+                          Upload first image
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          JPG, PNG, GIF, or WebP
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement)
+                              .files?.[0];
+                            if (file) handleImageUpload(file, 1);
+                          };
+                          input.click();
+                        }}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Choose File
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Image 2 */}
+              <div className="space-y-4">
+                <Label>Reference Image 2 *</Label>
+                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                  {formData.input_image_2_url ? (
+                    <div className="space-y-4">
+                      <img
+                        src={formData.input_image_2_url}
+                        alt="Reference 2"
+                        className="max-w-full h-32 mx-auto object-cover rounded-lg"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            input_image_2_url: '',
+                          }))
+                        }
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+                      <div>
+                        <p className="text-sm font-medium">
+                          Upload second image
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          JPG, PNG, GIF, or WebP
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          const input = document.createElement('input');
+                          input.type = 'file';
+                          input.accept = 'image/*';
+                          input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement)
+                              .files?.[0];
+                            if (file) handleImageUpload(file, 2);
+                          };
+                          input.click();
+                        }}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Choose File
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Schedule Settings */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">Schedule Settings</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-interval">
+                    Generation Interval (minutes)
+                  </Label>
+                  <Input
+                    id="edit-interval"
+                    type="number"
+                    min="1"
+                    value={formData.generation_interval_minutes}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        generation_interval_minutes:
+                          parseInt(e.target.value) || 60,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-max_images">Max Images to Generate</Label>
+                  <Input
+                    id="edit-max_images"
+                    type="number"
+                    min="1"
+                    value={formData.max_images_to_generate}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        max_images_to_generate: parseInt(e.target.value) || 10,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-duration">Duration (hours)</Label>
+                  <Input
+                    id="edit-duration"
+                    type="number"
+                    min="1"
+                    value={formData.schedule_duration_hours}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        schedule_duration_hours: parseInt(e.target.value) || 24,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="edit-schedule_enabled"
+                  checked={formData.schedule_enabled}
+                  onCheckedChange={(checked) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      schedule_enabled: checked,
+                    }))
+                  }
+                />
+                <Label htmlFor="edit-schedule_enabled">
+                  Enable schedule
+                </Label>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <Button
+                onClick={handleUpdateSchedule}
+                disabled={isSaving}
+                className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Update Schedule
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Existing Schedules */}
       <div className="space-y-4">
         {schedules.length > 0 ? (
@@ -647,7 +1037,11 @@ const PrintOnShirtView = () => {
                     >
                       <Zap className="h-4 w-4" />
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => handleEditSchedule(schedule)}
+                    >
                       <Settings className="h-4 w-4" />
                     </Button>
                     <Button

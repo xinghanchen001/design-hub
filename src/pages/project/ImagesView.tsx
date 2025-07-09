@@ -16,6 +16,7 @@ import {
   Trash2,
   Loader2,
   Shirt,
+  RotateCcw,
 } from 'lucide-react';
 
 interface Project {
@@ -271,8 +272,31 @@ const ImagesView = () => {
             View all AI-generated images from all your schedules
           </p>
         </div>
-        {images.length > 0 && (
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
+          {/* Refresh button */}
+          <Button
+            variant="outline"
+            onClick={() => {
+              setLoading(true);
+              loadImages();
+            }}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                Refresh
+              </>
+            )}
+          </Button>
+
+          {/* Selection button */}
+          {images.length > 0 && (
             <Button
               variant={isSelecting ? 'secondary' : 'outline'}
               onClick={() => {
@@ -294,8 +318,8 @@ const ImagesView = () => {
                 </>
               )}
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Bulk actions toolbar - show when in selection mode and images are selected */}
@@ -362,11 +386,11 @@ const ImagesView = () => {
                 isSelecting ? () => toggleImageSelection(image.id) : undefined
               }
             >
-              <div className="aspect-square bg-muted relative">
+              <div className="aspect-square bg-white relative">
                 <img
                   src={image.image_url}
                   alt={image.prompt}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain"
                 />
 
                 {/* Selection checkbox */}
