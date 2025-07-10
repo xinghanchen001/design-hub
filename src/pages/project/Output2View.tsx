@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -14,17 +20,15 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
-  Bot,
-  Image,
-  CheckSquare,
-  Square,
-  X,
-  Trash2,
-  Loader2,
-  RotateCcw,
-  MoreVertical,
+  Shirt,
+  RefreshCw,
   Download,
+  MoreVertical,
   Eye,
+  Trash2,
+  CheckSquare,
+  X,
+  Loader2,
 } from 'lucide-react';
 
 interface Project {
@@ -44,68 +48,113 @@ interface Project {
   updated_at: string;
 }
 
-interface GeneratedImage {
+interface PrintOnShirtImage {
   id: string;
+  schedule_id: string;
   image_url: string;
   prompt: string;
+  status: string;
+  prediction_id: string;
   generated_at: string;
-  project_id: string;
-  project_name?: string | null;
-  model_used?: string;
-  generation_time_seconds?: number;
-  storage_path?: string | null;
-  image_type?: 'regular' | 'print-on-shirt';
+  created_at: string;
+  completed_at: string;
+  input_image_1_url: string;
+  input_image_2_url: string;
+  model_used: string;
+  generation_time_seconds: number;
+  error_message: string | null;
+  schedule_name?: string;
 }
 
-const ImagesView = () => {
+const Output2View = () => {
   const { project } = useOutletContext<{
     project: Project;
     fetchProjectData: () => Promise<void>;
   }>();
   const { user } = useAuth();
 
-  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [images, setImages] = useState<PrintOnShirtImage[]>([]);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
   const [isDeletingImages, setIsDeletingImages] = useState(false);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!user) return;
-    loadImages();
-  }, [user]);
-
-  const loadImages = async () => {
+  const fetchPrintOnShirtImages = async () => {
+    setIsLoading(true);
     try {
-      // Fetch only regular generated images (Project 1)
-      const { data: regularImages, error: regularError } = await supabase
-        .from('generated_images')
+      if (!user?.id) return;
+
+      // Fetch print-on-shirt images with schedule info
+      const { data: printImages, error } = await supabase
+        .from('print_on_shirt_images')
         .select(
           `
           *,
-          projects:project_id (
-            name
-          )
+          print_on_shirt_schedules(name)
         `
         )
-        .eq('user_id', user?.id)
-        .order('generated_at', { ascending: false })
-        .limit(50);
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-      if (regularError) throw regularError;
+      if (error) {
+        console.error('Error fetching print-on-shirt images:', error);
+        toast.error('Failed to fetch print-on-shirt images');
+      } else {
+        // Transform the data to include schedule name
+        const transformedImages =
+          printImages?.map((img) => ({
+            ...img,
+            schedule_name:
+              img.print_on_shirt_schedules?.name || 'Unknown Schedule',
+          })) || [];
 
-      // Transform regular images
-      const transformedImages = (regularImages || []).map((image) => ({
-        ...image,
-        project_name: image.projects?.name || null,
-        image_type: 'regular' as const,
-      }));
-
-      setImages(transformedImages);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to load images');
+        setImages(transformedImages);
+      }
+    } catch (error) {
+      console.error('Error fetching print-on-shirt images:', error);
+      toast.error('An error occurred while fetching images');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPrintOnShirtImages();
+  }, [user?.id]);
+
+  const formatDate = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDateShort = (dateString: string) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;
+  };
+
+  const handleDownload = async (imageUrl: string, filename: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success('Image downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      toast.error('Failed to download image');
     }
   };
 
@@ -137,6 +186,39 @@ const ImagesView = () => {
     }
   };
 
+  const downloadImage = async (image: PrintOnShirtImage) => {
+    if (!image.image_url) {
+      toast.error('No image URL available');
+      return;
+    }
+    await handleDownload(image.image_url, `print-on-shirt-${image.id}.png`);
+  };
+
+  const deleteImage = async (image: PrintOnShirtImage) => {
+    if (
+      !window.confirm(
+        'Are you sure you want to delete this image? This action cannot be undone.'
+      )
+    ) {
+      return;
+    }
+
+    try {
+      // Delete from database
+      const { error } = await supabase
+        .from('print_on_shirt_images')
+        .delete()
+        .eq('id', image.id);
+
+      if (error) throw error;
+
+      toast.success('Image deleted successfully');
+      await fetchPrintOnShirtImages();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete image');
+    }
+  };
+
   const deleteSelectedImages = async () => {
     if (selectedImages.size === 0) return;
 
@@ -151,33 +233,11 @@ const ImagesView = () => {
     try {
       setIsDeletingImages(true);
 
-      // Get the images to delete
-      const imagesToDelete = images.filter((img) => selectedImages.has(img.id));
-
-      // Delete from storage first (if storage_path exists)
-      const storageDeletePromises = imagesToDelete
-        .filter((img) => img.storage_path)
-        .map(async (img) => {
-          const { error } = await supabase.storage
-            .from('ai-generated-images')
-            .remove([img.storage_path!]);
-
-          if (error) {
-            console.error(
-              `Failed to delete storage file for image ${img.id}:`,
-              error
-            );
-          }
-        });
-
-      await Promise.allSettled(storageDeletePromises);
-
-      // Delete from database (only regular images in this view)
-      const imageIds = imagesToDelete.map((img) => img.id);
+      const imageIds = Array.from(selectedImages);
 
       if (imageIds.length > 0) {
         const { error } = await supabase
-          .from('generated_images')
+          .from('print_on_shirt_images')
           .delete()
           .in('id', imageIds);
 
@@ -190,12 +250,9 @@ const ImagesView = () => {
         }`
       );
 
-      // Reset selection and exit selection mode
       setSelectedImages(new Set());
       setIsSelecting(false);
-
-      // Refresh data
-      await loadImages();
+      await fetchPrintOnShirtImages();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete images');
     } finally {
@@ -203,114 +260,35 @@ const ImagesView = () => {
     }
   };
 
-  const downloadImage = async (image: GeneratedImage) => {
-    try {
-      const response = await fetch(image.image_url);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `generated-image-${image.id}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      toast.success('Image downloaded successfully');
-    } catch (error) {
-      toast.error('Failed to download image');
+  const viewImageDetails = (image: PrintOnShirtImage) => {
+    if (image.image_url) {
+      window.open(image.image_url, '_blank');
     }
   };
-
-  const deleteImage = async (image: GeneratedImage) => {
-    if (
-      !window.confirm(
-        'Are you sure you want to delete this image? This action cannot be undone.'
-      )
-    ) {
-      return;
-    }
-
-    try {
-      // Delete from storage first (if storage_path exists)
-      if (image.storage_path) {
-        const { error } = await supabase.storage
-          .from('ai-generated-images')
-          .remove([image.storage_path]);
-
-        if (error) {
-          console.error(
-            `Failed to delete storage file for image ${image.id}:`,
-            error
-          );
-        }
-      }
-
-      // Delete from database
-      const { error } = await supabase
-        .from('generated_images')
-        .delete()
-        .eq('id', image.id);
-
-      if (error) throw error;
-
-      toast.success('Image deleted successfully');
-
-      // Refresh data
-      await loadImages();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to delete image');
-    }
-  };
-
-  const viewImageDetails = (image: GeneratedImage) => {
-    // Open image in new tab for full view
-    window.open(image.image_url, '_blank');
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center space-y-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto" />
-          <p className="text-muted-foreground">Loading images...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
-      {/* Header with multi-select controls */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Generated Images
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Shirt className="h-6 w-6" />
+            Print-on-Shirt Gallery
           </h1>
           <p className="text-muted-foreground">
-            View AI-generated images from your regular generation schedules
+            Generated images from your print-on-shirt schedules (Project 2)
           </p>
         </div>
         <div className="flex items-center gap-3">
           {/* Refresh button */}
           <Button
+            onClick={fetchPrintOnShirtImages}
+            disabled={isLoading}
             variant="outline"
-            onClick={() => {
-              setLoading(true);
-              loadImages();
-            }}
-            disabled={loading}
           >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Refreshing...
-              </>
-            ) : (
-              <>
-                <RotateCcw className="h-4 w-4 mr-2" />
-                Refresh
-              </>
-            )}
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`}
+            />
+            Refresh
           </Button>
 
           {/* Selection button */}
@@ -387,7 +365,39 @@ const ImagesView = () => {
         </Card>
       )}
 
-      {/* Images grid */}
+      {/* Stats Card */}
+      <Card className="shadow-card border-border/50">
+        <CardContent className="p-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-primary">
+                {images.length}
+              </div>
+              <div className="text-sm text-muted-foreground">Total Images</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-green-600">
+                {images.filter((img) => img.status === 'completed').length}
+              </div>
+              <div className="text-sm text-muted-foreground">Completed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-red-600">
+                {images.filter((img) => img.status === 'failed').length}
+              </div>
+              <div className="text-sm text-muted-foreground">Failed</div>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold text-yellow-600">
+                {images.filter((img) => img.status === 'processing').length}
+              </div>
+              <div className="text-sm text-muted-foreground">Processing</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Images Grid */}
       {images.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {images.map((image) => (
@@ -405,11 +415,17 @@ const ImagesView = () => {
               }
             >
               <div className="aspect-square bg-white relative">
-                <img
-                  src={image.image_url}
-                  alt={image.prompt}
-                  className="w-full h-full object-contain"
-                />
+                {image.image_url && image.status === 'completed' ? (
+                  <img
+                    src={image.image_url}
+                    alt={image.prompt}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-muted">
+                    <Shirt className="h-12 w-12 text-muted-foreground" />
+                  </div>
+                )}
 
                 {/* Selection checkbox */}
                 {isSelecting && (
@@ -440,11 +456,19 @@ const ImagesView = () => {
                       <DropdownMenuContent align="end" className="w-48">
                         <DropdownMenuItem
                           onClick={() => viewImageDetails(image)}
+                          disabled={
+                            !image.image_url || image.status !== 'completed'
+                          }
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           View Full Size
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => downloadImage(image)}>
+                        <DropdownMenuItem
+                          onClick={() => downloadImage(image)}
+                          disabled={
+                            !image.image_url || image.status !== 'completed'
+                          }
+                        >
                           <Download className="h-4 w-4 mr-2" />
                           Download Image
                         </DropdownMenuItem>
@@ -460,23 +484,27 @@ const ImagesView = () => {
                   </div>
                 )}
               </div>
+
               <CardContent className="p-4">
                 <div className="space-y-2">
-                  {/* Project name and model info */}
+                  {/* Schedule name and status */}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Bot className="h-3 w-3 text-muted-foreground" />
+                      <Shirt className="h-3 w-3 text-muted-foreground" />
                       <span className="text-xs font-medium text-muted-foreground">
-                        {image.project_name || '(Deleted Schedule)'}
+                        {image.schedule_name || 'Unknown Schedule'}
                       </span>
                     </div>
-                    {image.model_used && (
-                      <Badge variant="outline" className="text-xs px-1 py-0">
-                        {image.model_used === 'flux-kontext-max'
-                          ? 'Edit'
-                          : 'Generate'}
-                      </Badge>
-                    )}
+                    <Badge
+                      variant={
+                        image.status === 'completed' ? 'outline' : 'secondary'
+                      }
+                      className="text-xs px-1 py-0"
+                    >
+                      {image.status === 'completed'
+                        ? 'Multi-Image'
+                        : image.status}
+                    </Badge>
                   </div>
 
                   {/* Prompt */}
@@ -490,9 +518,7 @@ const ImagesView = () => {
 
                   {/* Date and generation time */}
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                      {new Date(image.generated_at).toLocaleDateString()}
-                    </span>
+                    <span>{formatDateShort(image.created_at)}</span>
                     {image.generation_time_seconds && (
                       <span>{image.generation_time_seconds.toFixed(1)}s</span>
                     )}
@@ -504,12 +530,12 @@ const ImagesView = () => {
         </div>
       ) : (
         <div className="text-center py-12">
-          <Image className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+          <Shirt className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium text-foreground mb-2">
-            No images generated yet
+            No print-on-shirt images yet
           </h3>
           <p className="text-muted-foreground">
-            Images will appear here automatically when your schedules run
+            Create a print-on-shirt schedule to start generating images
           </p>
         </div>
       )}
@@ -517,4 +543,4 @@ const ImagesView = () => {
   );
 };
 
-export default ImagesView;
+export default Output2View;

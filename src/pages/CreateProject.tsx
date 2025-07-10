@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+
 import { Upload, ArrowLeft, Bot, X, Image } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -30,6 +31,7 @@ const CreateProject = () => {
     string | null
   >(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [referenceMode, setReferenceMode] = useState<'upload'>('upload');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -110,6 +112,8 @@ const CreateProject = () => {
     setLoading(true);
     try {
       let referenceImageUrl = '';
+
+      // Handle reference image upload
       if (referenceImage) {
         const uploadedUrl = await uploadReferenceImage();
         if (uploadedUrl) {
@@ -209,7 +213,7 @@ const CreateProject = () => {
                   <Label htmlFor="description">Description</Label>
                   <Textarea
                     id="description"
-                    placeholder="Describe what this agent will be used for..."
+                    placeholder="Describe what your AI agent will create..."
                     value={formData.description}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -223,12 +227,12 @@ const CreateProject = () => {
               </CardContent>
             </Card>
 
-            {/* AI Prompt Configuration */}
+            {/* Prompt Configuration */}
             <Card className="shadow-card border-border/50">
               <CardHeader>
-                <CardTitle>AI Prompt Configuration</CardTitle>
+                <CardTitle>Prompt Configuration</CardTitle>
                 <CardDescription>
-                  Define the prompt that will be used for image generation
+                  Define what your AI agent will generate
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -236,7 +240,7 @@ const CreateProject = () => {
                   <Label htmlFor="prompt">Generation Prompt *</Label>
                   <Textarea
                     id="prompt"
-                    placeholder="e.g., Create a professional product photo of [product] on a clean white background with soft lighting..."
+                    placeholder="A professional product photo of a [product] on a clean white background, studio lighting, high quality, detailed..."
                     value={formData.prompt}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -260,79 +264,84 @@ const CreateProject = () => {
               <CardHeader>
                 <CardTitle>Reference Image (Optional)</CardTitle>
                 <CardDescription>
-                  Upload a reference image to guide the AI generation. The model
-                  will use this as inspiration for style, composition, or
-                  editing.
+                  Upload a reference image to guide the AI generation, or select
+                  from your bucket.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {!referenceImagePreview ? (
-                  <div className="border-2 border-dashed border-border rounded-lg p-8">
-                    <div className="flex flex-col items-center justify-center space-y-4">
-                      <div className="p-4 rounded-full bg-muted">
-                        <Upload className="h-8 w-8 text-muted-foreground" />
+                <div className="space-y-4">
+                  {!referenceImagePreview ? (
+                    <div className="border-2 border-dashed border-border rounded-lg p-8">
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        <div className="p-4 rounded-full bg-muted">
+                          <Upload className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                        <div className="text-center space-y-2">
+                          <h3 className="font-medium">
+                            Upload Reference Image
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            Drag and drop or click to upload
+                            <br />
+                            JPEG, PNG, GIF, or WebP (max 10MB)
+                          </p>
+                        </div>
+                        <Label
+                          htmlFor="reference-image"
+                          className="cursor-pointer"
+                        >
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="pointer-events-none"
+                          >
+                            <Image className="h-4 w-4 mr-2" />
+                            Choose Image
+                          </Button>
+                          <Input
+                            id="reference-image"
+                            type="file"
+                            accept="image/jpeg,image/png,image/gif,image/webp"
+                            onChange={handleReferenceImageChange}
+                            className="hidden"
+                          />
+                        </Label>
                       </div>
-                      <div className="text-center space-y-2">
-                        <h3 className="font-medium">Upload Reference Image</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Drag and drop or click to upload
-                          <br />
-                          JPEG, PNG, GIF, or WebP (max 10MB)
-                        </p>
-                      </div>
-                      <Label
-                        htmlFor="reference-image"
-                        className="cursor-pointer"
-                      >
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="relative">
+                        <img
+                          src={referenceImagePreview}
+                          alt="Reference preview"
+                          className="w-full max-h-64 object-contain rounded-lg border"
+                        />
                         <Button
                           type="button"
-                          variant="outline"
-                          className="pointer-events-none"
+                          variant="destructive"
+                          size="sm"
+                          className="absolute top-2 right-2"
+                          onClick={removeReferenceImage}
                         >
-                          <Image className="h-4 w-4 mr-2" />
-                          Choose Image
+                          <X className="h-4 w-4" />
                         </Button>
-                        <Input
-                          id="reference-image"
-                          type="file"
-                          accept="image/jpeg,image/png,image/gif,image/webp"
-                          onChange={handleReferenceImageChange}
-                          className="hidden"
-                        />
-                      </Label>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Image className="h-4 w-4" />
+                        <span>{referenceImage?.name}</span>
+                        <span>
+                          (
+                          {(
+                            (referenceImage?.size || 0) /
+                            (1024 * 1024)
+                          ).toFixed(2)}{' '}
+                          MB)
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <img
-                        src={referenceImagePreview}
-                        alt="Reference preview"
-                        className="w-full max-h-64 object-contain rounded-lg border"
-                      />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        className="absolute top-2 right-2"
-                        onClick={removeReferenceImage}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Image className="h-4 w-4" />
-                      <span>{referenceImage?.name}</span>
-                      <span>
-                        (
-                        {((referenceImage?.size || 0) / (1024 * 1024)).toFixed(
-                          2
-                        )}{' '}
-                        MB)
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  )}
+                </div>
+
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>
                     <strong>Tips for reference images:</strong>
@@ -346,6 +355,10 @@ const CreateProject = () => {
                     <li>
                       You can edit or enhance the reference image with text
                       prompts
+                    </li>
+                    <li>
+                      After creating your project, you can upload multiple
+                      images to your project's bucket for batch generation
                     </li>
                   </ul>
                 </div>

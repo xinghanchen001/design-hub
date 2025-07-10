@@ -33,7 +33,13 @@ import {
   Settings,
   Shirt,
   ChartColumn,
+  ChevronDown,
+  ChevronRight,
+  Database,
+  BookOpen,
+  Folder,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface Project {
   id: string;
@@ -60,6 +66,11 @@ const ProjectLayout = () => {
 
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
+  const [expandedGroups, setExpandedGroups] = useState({
+    project1: true,
+    project2: true,
+    project3: true,
+  });
 
   useEffect(() => {
     if (!user || !projectId) return;
@@ -83,6 +94,13 @@ const ProjectLayout = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleGroup = (groupKey: keyof typeof expandedGroups) => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
   };
 
   if (loading) {
@@ -113,44 +131,6 @@ const ProjectLayout = () => {
     );
   }
 
-  const menuItems = [
-    {
-      title: 'Dashboard',
-      path: 'dashboard',
-      icon: ChartColumn,
-    },
-    {
-      title: 'Schedules',
-      path: 'schedules',
-      icon: Calendar,
-    },
-    {
-      title: 'Generation Queue',
-      path: 'queue',
-      icon: Clock,
-    },
-    {
-      title: 'Generated Images',
-      path: 'images',
-      icon: Images,
-    },
-    {
-      title: 'Print on Shirt',
-      path: 'printonshirt',
-      icon: Shirt,
-    },
-    {
-      title: 'Journal Blog Post',
-      path: 'journal',
-      icon: FileText,
-    },
-    {
-      title: 'Settings',
-      path: 'settings',
-      icon: Settings,
-    },
-  ];
-
   const AppSidebar = () => (
     <Sidebar className="w-60">
       <SidebarContent>
@@ -170,30 +150,307 @@ const ProjectLayout = () => {
           <p className="text-xs text-muted-foreground">Runway Gen-4</p>
         </div>
 
+        {/* Dashboard - Standalone */}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.path}>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink
+                    to="dashboard"
+                    className={({ isActive }) => `
+                      flex items-center gap-2 px-2 py-2 rounded-md transition-colors
+                      ${
+                        isActive
+                          ? 'bg-muted text-primary font-medium'
+                          : 'hover:bg-muted/50'
+                      }
+                    `}
+                    end
+                  >
+                    <ChartColumn className="h-4 w-4" />
+                    <span>Dashboard</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Project 1 - Image Generation */}
+        <SidebarGroup>
+          <SidebarGroupLabel
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => toggleGroup('project1')}
+          >
+            <div className="flex items-center gap-2">
+              <Images className="h-4 w-4" />
+              <span>Project 1 - Image Generation</span>
+            </div>
+            {expandedGroups.project1 ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </SidebarGroupLabel>
+          {expandedGroups.project1 && (
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
                   <SidebarMenuButton asChild>
                     <NavLink
-                      to={item.path}
+                      to="schedules"
                       className={({ isActive }) => `
-                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
                             ? 'bg-muted text-primary font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
-                      end={item.path === 'dashboard'}
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <Calendar className="h-4 w-4" />
+                      <span>Schedules</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              ))}
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="queue"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Clock className="h-4 w-4" />
+                      <span>Generation Queue</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="images"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Images className="h-4 w-4" />
+                      <span>Generated Images</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="bucket/image-generation"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Folder className="h-4 w-4" />
+                      <span>Reference Bucket</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          )}
+        </SidebarGroup>
+
+        {/* Project 2 - Print on Shirt */}
+        <SidebarGroup>
+          <SidebarGroupLabel
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => toggleGroup('project2')}
+          >
+            <div className="flex items-center gap-2">
+              <Shirt className="h-4 w-4" />
+              <span>Project 2 - Print on Shirt</span>
+            </div>
+            {expandedGroups.project2 ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </SidebarGroupLabel>
+          {expandedGroups.project2 && (
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="printonshirt"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Shirt className="h-4 w-4" />
+                      <span>Print on Shirt</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="output2"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Database className="h-4 w-4" />
+                      <span>Output2</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="bucket/print-on-shirt"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Folder className="h-4 w-4" />
+                      <span>Reference Bucket</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          )}
+        </SidebarGroup>
+
+        {/* Project 3 - Journal */}
+        <SidebarGroup>
+          <SidebarGroupLabel
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => toggleGroup('project3')}
+          >
+            <div className="flex items-center gap-2">
+              <BookOpen className="h-4 w-4" />
+              <span>Project 3 - Journal</span>
+            </div>
+            {expandedGroups.project3 ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </SidebarGroupLabel>
+          {expandedGroups.project3 && (
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="journal"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <FileText className="h-4 w-4" />
+                      <span>Journal Blog Post</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="output3"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Database className="h-4 w-4" />
+                      <span>Output3</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="bucket/journal"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-primary font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Folder className="h-4 w-4" />
+                      <span>Reference Bucket</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          )}
+        </SidebarGroup>
+
+        {/* Settings - Standalone */}
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink
+                    to="settings"
+                    className={({ isActive }) => `
+                      flex items-center gap-2 px-2 py-2 rounded-md transition-colors
+                      ${
+                        isActive
+                          ? 'bg-muted text-primary font-medium'
+                          : 'hover:bg-muted/50'
+                      }
+                    `}
+                  >
+                    <Settings className="h-4 w-4" />
+                    <span>Settings</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

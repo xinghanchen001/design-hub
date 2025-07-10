@@ -17,6 +17,9 @@ import {
   PrintOnShirtView,
   JournalView,
   SettingsView,
+  Output2View,
+  Output3View,
+  BucketView,
 } from './pages/project';
 import NotFound from './pages/NotFound';
 
@@ -44,7 +47,15 @@ const App = () => (
                 <Route path="queue" element={<QueueView />} />
                 <Route path="images" element={<ImagesView />} />
                 <Route path="printonshirt" element={<PrintOnShirtView />} />
+                <Route path="output2" element={<Output2View />} />
                 <Route path="journal" element={<JournalView />} />
+                <Route path="output3" element={<Output3View />} />
+                <Route
+                  path="bucket/image-generation"
+                  element={<BucketView />}
+                />
+                <Route path="bucket/print-on-shirt" element={<BucketView />} />
+                <Route path="bucket/journal" element={<BucketView />} />
                 <Route path="settings" element={<SettingsView />} />
               </Route>
 

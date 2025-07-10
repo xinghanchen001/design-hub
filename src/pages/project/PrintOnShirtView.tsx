@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
@@ -37,6 +38,8 @@ import {
   Save,
   Loader2,
   ImageIcon,
+  Folder,
+  Check,
 } from 'lucide-react';
 
 interface Project {
@@ -56,8 +59,21 @@ interface Project {
   updated_at: string;
 }
 
+interface BucketImage {
+  id: string;
+  filename: string;
+  storage_path: string;
+  image_url: string;
+  file_size: number;
+  mime_type: string;
+  metadata: any;
+  created_at: string;
+  updated_at: string;
+}
+
 interface PrintOnShirtSchedule {
   id: string;
+  project_id: string; // Add project_id as required field
   name: string;
   description: string | null;
   prompt: string;
@@ -72,6 +88,14 @@ interface PrintOnShirtSchedule {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Add bucket support
+  use_bucket_images?: boolean;
+  bucket_image_1_id?: string;
+  bucket_image_2_id?: string;
+  // Add stats
+  total_images?: number;
+  completed_images?: number;
+  failed_images?: number;
 }
 
 const PrintOnShirtView = () => {
@@ -86,8 +110,20 @@ const PrintOnShirtView = () => {
   const [loading, setLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [editingSchedule, setEditingSchedule] = useState<PrintOnShirtSchedule | null>(null);
+  const [editingSchedule, setEditingSchedule] =
+    useState<PrintOnShirtSchedule | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Bucket state
+  const [bucketImages, setBucketImages] = useState<BucketImage[]>([]);
+  const [loadingBucketImages, setLoadingBucketImages] = useState(false);
+  const [selectedBucketImage1, setSelectedBucketImage1] =
+    useState<BucketImage | null>(null);
+  const [selectedBucketImage2, setSelectedBucketImage2] =
+    useState<BucketImage | null>(null);
+  const [imageMode1, setImageMode1] = useState<'upload' | 'bucket'>('upload');
+  const [imageMode2, setImageMode2] = useState<'upload' | 'bucket'>('upload');
+  const [useBucketImages, setUseBucketImages] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -101,6 +137,9 @@ const PrintOnShirtView = () => {
     schedule_duration_hours: 24,
     max_images_to_generate: 10,
     generation_interval_minutes: 60,
+    use_bucket_images: false,
+    bucket_image_1_id: '',
+    bucket_image_2_id: '',
   });
 
   const aspectRatios = [
@@ -117,19 +156,45 @@ const PrintOnShirtView = () => {
   useEffect(() => {
     if (!user) return;
     loadSchedules();
+    loadBucketImages();
   }, [user]);
 
   const loadSchedules = async () => {
     try {
+      // Fetch schedules with image statistics
       const { data: schedulesData, error: schedulesError } = await supabase
         .from('print_on_shirt_schedules')
-        .select('*')
+        .select(
+          `
+          *,
+          print_on_shirt_images!schedule_id(
+            id,
+            status
+          )
+        `
+        )
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
       if (schedulesError) throw schedulesError;
 
-      setSchedules(schedulesData || []);
+      // Transform data to include statistics
+      const schedulesWithStats =
+        schedulesData?.map((schedule) => {
+          const images = schedule.print_on_shirt_images || [];
+          return {
+            ...schedule,
+            total_images: images.length,
+            completed_images: images.filter(
+              (img: any) => img.status === 'completed'
+            ).length,
+            failed_images: images.filter((img: any) => img.status === 'failed')
+              .length,
+            print_on_shirt_images: undefined, // Remove the nested data
+          };
+        }) || [];
+
+      setSchedules(schedulesWithStats);
     } catch (error: any) {
       toast.error(error.message || 'Failed to load schedules');
     } finally {
@@ -137,14 +202,77 @@ const PrintOnShirtView = () => {
     }
   };
 
+  const loadBucketImages = async () => {
+    setLoadingBucketImages(true);
+    try {
+      const { data, error } = await supabase
+        .from('project_bucket_images')
+        .select('*')
+        .eq('project_id', project.id)
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setBucketImages(data || []);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to load bucket images');
+    } finally {
+      setLoadingBucketImages(false);
+    }
+  };
+
+  const handleBucketImageSelect = (image: BucketImage, imageNumber: 1 | 2) => {
+    if (imageNumber === 1) {
+      setSelectedBucketImage1(image);
+      setFormData((prev) => ({
+        ...prev,
+        bucket_image_1_id: image.id,
+        input_image_1_url: image.image_url,
+      }));
+    } else {
+      setSelectedBucketImage2(image);
+      setFormData((prev) => ({
+        ...prev,
+        bucket_image_2_id: image.id,
+        input_image_2_url: image.image_url,
+      }));
+    }
+  };
+
+  const removeBucketSelection = (imageNumber: 1 | 2) => {
+    if (imageNumber === 1) {
+      setSelectedBucketImage1(null);
+      setFormData((prev) => ({
+        ...prev,
+        bucket_image_1_id: '',
+        input_image_1_url: '',
+      }));
+    } else {
+      setSelectedBucketImage2(null);
+      setFormData((prev) => ({
+        ...prev,
+        bucket_image_2_id: '',
+        input_image_2_url: '',
+      }));
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const handleImageUpload = async (file: File, imageNumber: 1 | 2) => {
     if (!file) return;
 
     try {
       const fileExt = file.name.split('.').pop();
-      const fileName = `${
-        user?.id
-      }/${Date.now()}_input_${imageNumber}.${fileExt}`;
+      const fileName = `${user?.id}/inputs/${
+        project.id
+      }/input_${imageNumber}_${Date.now()}.${fileExt}`;
 
       // Upload to user-images bucket
       const { error: uploadError } = await supabase.storage
@@ -187,6 +315,7 @@ const PrintOnShirtView = () => {
         .from('print_on_shirt_schedules')
         .insert({
           user_id: user?.id,
+          project_id: project.id, // Add project_id to link schedule to project
           name: formData.name,
           description: formData.description || null,
           prompt: formData.prompt,
@@ -197,6 +326,9 @@ const PrintOnShirtView = () => {
           schedule_duration_hours: formData.schedule_duration_hours,
           max_images_to_generate: formData.max_images_to_generate,
           generation_interval_minutes: formData.generation_interval_minutes,
+          use_bucket_images: formData.use_bucket_images,
+          bucket_image_1_id: formData.bucket_image_1_id || null,
+          bucket_image_2_id: formData.bucket_image_2_id || null,
         })
         .select()
         .single();
@@ -217,7 +349,17 @@ const PrintOnShirtView = () => {
         schedule_duration_hours: 24,
         max_images_to_generate: 10,
         generation_interval_minutes: 60,
+        use_bucket_images: false,
+        bucket_image_1_id: '',
+        bucket_image_2_id: '',
       });
+
+      // Reset bucket state
+      setSelectedBucketImage1(null);
+      setSelectedBucketImage2(null);
+      setImageMode1('upload');
+      setImageMode2('upload');
+      setUseBucketImages(false);
 
       setIsCreating(false);
       await loadSchedules();
@@ -241,7 +383,34 @@ const PrintOnShirtView = () => {
       schedule_duration_hours: schedule.schedule_duration_hours,
       max_images_to_generate: schedule.max_images_to_generate,
       generation_interval_minutes: schedule.generation_interval_minutes,
+      use_bucket_images: schedule.use_bucket_images || false,
+      bucket_image_1_id: schedule.bucket_image_1_id || '',
+      bucket_image_2_id: schedule.bucket_image_2_id || '',
     });
+
+    // Set bucket images if they exist
+    if (schedule.use_bucket_images) {
+      setUseBucketImages(true);
+      if (schedule.bucket_image_1_id) {
+        const bucketImage1 = bucketImages.find(
+          (img) => img.id === schedule.bucket_image_1_id
+        );
+        if (bucketImage1) {
+          setSelectedBucketImage1(bucketImage1);
+          setImageMode1('bucket');
+        }
+      }
+      if (schedule.bucket_image_2_id) {
+        const bucketImage2 = bucketImages.find(
+          (img) => img.id === schedule.bucket_image_2_id
+        );
+        if (bucketImage2) {
+          setSelectedBucketImage2(bucketImage2);
+          setImageMode2('bucket');
+        }
+      }
+    }
+
     setIsEditing(true);
   };
 
@@ -263,6 +432,7 @@ const PrintOnShirtView = () => {
       const { error: updateError } = await supabase
         .from('print_on_shirt_schedules')
         .update({
+          project_id: project.id, // Ensure project_id is included in updates
           name: formData.name,
           description: formData.description || null,
           prompt: formData.prompt,
@@ -273,6 +443,9 @@ const PrintOnShirtView = () => {
           schedule_duration_hours: formData.schedule_duration_hours,
           max_images_to_generate: formData.max_images_to_generate,
           generation_interval_minutes: formData.generation_interval_minutes,
+          use_bucket_images: formData.use_bucket_images,
+          bucket_image_1_id: formData.bucket_image_1_id || null,
+          bucket_image_2_id: formData.bucket_image_2_id || null,
         })
         .eq('id', editingSchedule.id);
 
@@ -290,7 +463,18 @@ const PrintOnShirtView = () => {
         schedule_duration_hours: 24,
         max_images_to_generate: 10,
         generation_interval_minutes: 60,
+        use_bucket_images: false,
+        bucket_image_1_id: '',
+        bucket_image_2_id: '',
       });
+
+      // Reset bucket state
+      setSelectedBucketImage1(null);
+      setSelectedBucketImage2(null);
+      setImageMode1('upload');
+      setImageMode2('upload');
+      setUseBucketImages(false);
+
       setIsEditing(false);
       setEditingSchedule(null);
       toast.success('Schedule updated successfully');
@@ -318,7 +502,17 @@ const PrintOnShirtView = () => {
       schedule_duration_hours: 24,
       max_images_to_generate: 10,
       generation_interval_minutes: 60,
+      use_bucket_images: false,
+      bucket_image_1_id: '',
+      bucket_image_2_id: '',
     });
+
+    // Reset bucket state
+    setSelectedBucketImage1(null);
+    setSelectedBucketImage2(null);
+    setImageMode1('upload');
+    setImageMode2('upload');
+    setUseBucketImages(false);
   };
 
   if (loading) {
@@ -334,18 +528,59 @@ const PrintOnShirtView = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header with actions */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Print on Shirt</h1>
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
+            <Shirt className="h-8 w-8" />
+            Print on Shirt
+          </h1>
           <p className="text-muted-foreground">
-            Create schedules for multi-image combinations using FLUX Kontext
+            Create multi-image combination schedules for print-on-shirt designs
           </p>
         </div>
-        <Button onClick={() => setIsCreating(!isCreating)}>
+        <Button
+          onClick={() => setIsCreating(true)}
+          className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
+        >
           <Plus className="mr-2 h-4 w-4" />
           New Schedule
         </Button>
       </div>
+
+      {/* Generated Images Notification */}
+      {schedules.some((s) => s.completed_images && s.completed_images > 0) && (
+        <Card className="shadow-card border-blue-200 bg-blue-50">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                <div>
+                  <h3 className="text-sm font-medium text-blue-900">
+                    🎉 You have{' '}
+                    {schedules.reduce(
+                      (total, s) => total + (s.completed_images || 0),
+                      0
+                    )}{' '}
+                    generated images ready!
+                  </h3>
+                  <p className="text-xs text-blue-700">
+                    View your print-on-shirt images in the Output2 gallery
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => navigate(`/project/${project.id}/output2`)}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                size="sm"
+              >
+                <ImageIcon className="h-4 w-4 mr-2" />
+                View Gallery
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Create Schedule Form */}
       {isCreating && (
@@ -423,120 +658,360 @@ const PrintOnShirtView = () => {
             </div>
 
             {/* Image Upload Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Image 1 */}
-              <div className="space-y-4">
-                <Label>Reference Image 1 *</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                  {formData.input_image_1_url ? (
-                    <div className="space-y-4">
-                      <img
-                        src={formData.input_image_1_url}
-                        alt="Reference 1"
-                        className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            input_image_1_url: '',
-                          }))
-                        }
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          Upload first image
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          JPG, PNG, GIF, or WebP
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = 'image/*';
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement)
-                              .files?.[0];
-                            if (file) handleImageUpload(file, 1);
-                          };
-                          input.click();
-                        }}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Choose File
-                      </Button>
-                    </div>
-                  )}
-                </div>
+            <div className="space-y-6">
+              {/* Use Bucket Images Toggle */}
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="use-bucket-images"
+                  checked={useBucketImages}
+                  onCheckedChange={(checked) => {
+                    setUseBucketImages(checked);
+                    setFormData((prev) => ({
+                      ...prev,
+                      use_bucket_images: checked,
+                    }));
+                    if (checked) {
+                      toast.info(
+                        'When using bucket images, the schedule will generate one image for each combination of bucket images.'
+                      );
+                    }
+                  }}
+                />
+                <Label htmlFor="use-bucket-images">
+                  Use bucket images for batch generation
+                </Label>
               </div>
 
-              {/* Image 2 */}
-              <div className="space-y-4">
-                <Label>Reference Image 2 *</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                  {formData.input_image_2_url ? (
-                    <div className="space-y-4">
-                      <img
-                        src={formData.input_image_2_url}
-                        alt="Reference 2"
-                        className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            input_image_2_url: '',
-                          }))
-                        }
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          Upload second image
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          JPG, PNG, GIF, or WebP
-                        </p>
+              {useBucketImages && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Batch Generation Mode:</strong> When enabled, this
+                    schedule will generate one image for each possible
+                    combination of images from your bucket. Select bucket images
+                    below to use as references.
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Image 1 */}
+                <div className="space-y-4">
+                  <Label>Reference Image 1 *</Label>
+                  <Tabs
+                    value={imageMode1}
+                    onValueChange={(value) =>
+                      setImageMode1(value as 'upload' | 'bucket')
+                    }
+                  >
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="upload" className="space-y-4">
+                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                        {formData.input_image_1_url &&
+                        imageMode1 === 'upload' &&
+                        !selectedBucketImage1 ? (
+                          <div className="space-y-4">
+                            <img
+                              src={formData.input_image_1_url}
+                              alt="Reference 1"
+                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  input_image_1_url: '',
+                                }))
+                              }
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">
+                                Upload first image
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                JPG, PNG, GIF, or WebP
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement)
+                                    .files?.[0];
+                                  if (file) handleImageUpload(file, 1);
+                                };
+                                input.click();
+                              }}
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              Choose File
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = 'image/*';
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement)
-                              .files?.[0];
-                            if (file) handleImageUpload(file, 2);
-                          };
-                          input.click();
-                        }}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Choose File
-                      </Button>
-                    </div>
-                  )}
+                    </TabsContent>
+
+                    <TabsContent value="bucket" className="space-y-4">
+                      {loadingBucketImages ? (
+                        <div className="text-center py-8">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                          <p className="text-muted-foreground">
+                            Loading bucket images...
+                          </p>
+                        </div>
+                      ) : bucketImages.length === 0 ? (
+                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground mb-2">
+                            No images in bucket
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Upload images to your bucket first to select them
+                            here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {selectedBucketImage1 && (
+                            <div className="space-y-4">
+                              <div className="relative">
+                                <img
+                                  src={selectedBucketImage1.image_url}
+                                  alt={selectedBucketImage1.filename}
+                                  className="w-full max-h-32 object-contain rounded-lg border"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="absolute top-2 right-2"
+                                  onClick={() => removeBucketSelection(1)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <ImageIcon className="h-4 w-4" />
+                                <span>{selectedBucketImage1.filename}</span>
+                                <span>
+                                  (
+                                  {formatFileSize(
+                                    selectedBucketImage1.file_size
+                                  )}
+                                  )
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {!selectedBucketImage1 && (
+                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
+                              {bucketImages.map((image) => (
+                                <div
+                                  key={image.id}
+                                  className="relative group cursor-pointer"
+                                  onClick={() =>
+                                    handleBucketImageSelect(image, 1)
+                                  }
+                                >
+                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
+                                    <img
+                                      src={image.image_url}
+                                      alt={image.filename}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Check className="h-8 w-8 text-white" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1 truncate">
+                                    {image.filename}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </div>
+
+                {/* Image 2 */}
+                <div className="space-y-4">
+                  <Label>Reference Image 2 *</Label>
+                  <Tabs
+                    value={imageMode2}
+                    onValueChange={(value) =>
+                      setImageMode2(value as 'upload' | 'bucket')
+                    }
+                  >
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="upload" className="space-y-4">
+                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                        {formData.input_image_2_url &&
+                        imageMode2 === 'upload' &&
+                        !selectedBucketImage2 ? (
+                          <div className="space-y-4">
+                            <img
+                              src={formData.input_image_2_url}
+                              alt="Reference 2"
+                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  input_image_2_url: '',
+                                }))
+                              }
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">
+                                Upload second image
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                JPG, PNG, GIF, or WebP
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement)
+                                    .files?.[0];
+                                  if (file) handleImageUpload(file, 2);
+                                };
+                                input.click();
+                              }}
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              Choose File
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="bucket" className="space-y-4">
+                      {loadingBucketImages ? (
+                        <div className="text-center py-8">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                          <p className="text-muted-foreground">
+                            Loading bucket images...
+                          </p>
+                        </div>
+                      ) : bucketImages.length === 0 ? (
+                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground mb-2">
+                            No images in bucket
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Upload images to your bucket first to select them
+                            here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {selectedBucketImage2 && (
+                            <div className="space-y-4">
+                              <div className="relative">
+                                <img
+                                  src={selectedBucketImage2.image_url}
+                                  alt={selectedBucketImage2.filename}
+                                  className="w-full max-h-32 object-contain rounded-lg border"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="absolute top-2 right-2"
+                                  onClick={() => removeBucketSelection(2)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <ImageIcon className="h-4 w-4" />
+                                <span>{selectedBucketImage2.filename}</span>
+                                <span>
+                                  (
+                                  {formatFileSize(
+                                    selectedBucketImage2.file_size
+                                  )}
+                                  )
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {!selectedBucketImage2 && (
+                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
+                              {bucketImages.map((image) => (
+                                <div
+                                  key={image.id}
+                                  className="relative group cursor-pointer"
+                                  onClick={() =>
+                                    handleBucketImageSelect(image, 2)
+                                  }
+                                >
+                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
+                                    <img
+                                      src={image.image_url}
+                                      alt={image.filename}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Check className="h-8 w-8 text-white" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1 truncate">
+                                    {image.filename}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </div>
             </div>
@@ -718,120 +1193,305 @@ const PrintOnShirtView = () => {
             </div>
 
             {/* Image Upload Section */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Image 1 */}
-              <div className="space-y-4">
-                <Label>Reference Image 1 *</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                  {formData.input_image_1_url ? (
-                    <div className="space-y-4">
-                      <img
-                        src={formData.input_image_1_url}
-                        alt="Reference 1"
-                        className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            input_image_1_url: '',
-                          }))
-                        }
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          Upload first image
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          JPG, PNG, GIF, or WebP
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = 'image/*';
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement)
-                              .files?.[0];
-                            if (file) handleImageUpload(file, 1);
-                          };
-                          input.click();
-                        }}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Choose File
-                      </Button>
-                    </div>
-                  )}
-                </div>
+            <div className="space-y-6">
+              {/* Use Bucket Images Toggle */}
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="edit-use-bucket-images"
+                  checked={useBucketImages}
+                  onCheckedChange={(checked) => {
+                    setUseBucketImages(checked);
+                    setFormData((prev) => ({
+                      ...prev,
+                      use_bucket_images: checked,
+                    }));
+                    if (checked) {
+                      toast.info('When using bucket images, the schedule will generate one image for each combination of bucket images.');
+                    }
+                  }}
+                />
+                <Label htmlFor="edit-use-bucket-images">
+                  Use bucket images for batch generation
+                </Label>
               </div>
 
-              {/* Image 2 */}
-              <div className="space-y-4">
-                <Label>Reference Image 2 *</Label>
-                <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                  {formData.input_image_2_url ? (
-                    <div className="space-y-4">
-                      <img
-                        src={formData.input_image_2_url}
-                        alt="Reference 2"
-                        className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          setFormData((prev) => ({
-                            ...prev,
-                            input_image_2_url: '',
-                          }))
-                        }
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium">
-                          Upload second image
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          JPG, PNG, GIF, or WebP
-                        </p>
+              {useBucketImages && (
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    <strong>Batch Generation Mode:</strong> When enabled, this schedule will generate one image for each possible combination of images from your bucket. Select bucket images below to use as references.
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Image 1 */}
+                <div className="space-y-4">
+                  <Label>Reference Image 1 *</Label>
+                  <Tabs value={imageMode1} onValueChange={(value) => setImageMode1(value as 'upload' | 'bucket')}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="upload" className="space-y-4">
+                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                        {formData.input_image_1_url && imageMode1 === 'upload' && !selectedBucketImage1 ? (
+                          <div className="space-y-4">
+                            <img
+                              src={formData.input_image_1_url}
+                              alt="Reference 1"
+                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  input_image_1_url: '',
+                                }))
+                              }
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">Upload first image</p>
+                              <p className="text-xs text-muted-foreground">JPG, PNG, GIF, or WebP</p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement).files?.[0];
+                                  if (file) handleImageUpload(file, 1);
+                                };
+                                input.click();
+                              }}
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              Choose File
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                      <Button
-                        variant="outline"
-                        onClick={() => {
-                          const input = document.createElement('input');
-                          input.type = 'file';
-                          input.accept = 'image/*';
-                          input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement)
-                              .files?.[0];
-                            if (file) handleImageUpload(file, 2);
-                          };
-                          input.click();
-                        }}
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Choose File
-                      </Button>
-                    </div>
-                  )}
+                    </TabsContent>
+
+                    <TabsContent value="bucket" className="space-y-4">
+                      {loadingBucketImages ? (
+                        <div className="text-center py-8">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                          <p className="text-muted-foreground">Loading bucket images...</p>
+                        </div>
+                      ) : bucketImages.length === 0 ? (
+                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground mb-2">No images in bucket</p>
+                          <p className="text-sm text-muted-foreground">
+                            Upload images to your bucket first to select them here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {selectedBucketImage1 && (
+                            <div className="space-y-4">
+                              <div className="relative">
+                                <img
+                                  src={selectedBucketImage1.image_url}
+                                  alt={selectedBucketImage1.filename}
+                                  className="w-full max-h-32 object-contain rounded-lg border"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="absolute top-2 right-2"
+                                  onClick={() => removeBucketSelection(1)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <ImageIcon className="h-4 w-4" />
+                                <span>{selectedBucketImage1.filename}</span>
+                                <span>({formatFileSize(selectedBucketImage1.file_size)})</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {!selectedBucketImage1 && (
+                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
+                              {bucketImages.map((image) => (
+                                <div 
+                                  key={image.id}
+                                  className="relative group cursor-pointer"
+                                  onClick={() => handleBucketImageSelect(image, 1)}
+                                >
+                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
+                                    <img
+                                      src={image.image_url}
+                                      alt={image.filename}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Check className="h-8 w-8 text-white" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1 truncate">
+                                    {image.filename}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
+                </div>
+
+                {/* Image 2 */}
+                <div className="space-y-4">
+                  <Label>Reference Image 2 *</Label>
+                  <Tabs value={imageMode2} onValueChange={(value) => setImageMode2(value as 'upload' | 'bucket')}>
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="upload">Upload</TabsTrigger>
+                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="upload" className="space-y-4">
+                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
+                        {formData.input_image_2_url && imageMode2 === 'upload' && !selectedBucketImage2 ? (
+                          <div className="space-y-4">
+                            <img
+                              src={formData.input_image_2_url}
+                              alt="Reference 2"
+                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  input_image_2_url: '',
+                                }))
+                              }
+                            >
+                              <X className="h-4 w-4 mr-2" />
+                              Remove
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">Upload second image</p>
+                              <p className="text-xs text-muted-foreground">JPG, PNG, GIF, or WebP</p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                const input = document.createElement('input');
+                                input.type = 'file';
+                                input.accept = 'image/*';
+                                input.onchange = (e) => {
+                                  const file = (e.target as HTMLInputElement).files?.[0];
+                                  if (file) handleImageUpload(file, 2);
+                                };
+                                input.click();
+                              }}
+                            >
+                              <Upload className="h-4 w-4 mr-2" />
+                              Choose File
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="bucket" className="space-y-4">
+                      {loadingBucketImages ? (
+                        <div className="text-center py-8">
+                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                          <p className="text-muted-foreground">Loading bucket images...</p>
+                        </div>
+                      ) : bucketImages.length === 0 ? (
+                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground mb-2">No images in bucket</p>
+                          <p className="text-sm text-muted-foreground">
+                            Upload images to your bucket first to select them here.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {selectedBucketImage2 && (
+                            <div className="space-y-4">
+                              <div className="relative">
+                                <img
+                                  src={selectedBucketImage2.image_url}
+                                  alt={selectedBucketImage2.filename}
+                                  className="w-full max-h-32 object-contain rounded-lg border"
+                                />
+                                <Button
+                                  type="button"
+                                  variant="destructive"
+                                  size="sm"
+                                  className="absolute top-2 right-2"
+                                  onClick={() => removeBucketSelection(2)}
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <ImageIcon className="h-4 w-4" />
+                                <span>{selectedBucketImage2.filename}</span>
+                                <span>({formatFileSize(selectedBucketImage2.file_size)})</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {!selectedBucketImage2 && (
+                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
+                              {bucketImages.map((image) => (
+                                <div 
+                                  key={image.id}
+                                  className="relative group cursor-pointer"
+                                  onClick={() => handleBucketImageSelect(image, 2)}
+                                >
+                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
+                                    <img
+                                      src={image.image_url}
+                                      alt={image.filename}
+                                      className="w-full h-full object-cover"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Check className="h-8 w-8 text-white" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground mt-1 truncate">
+                                    {image.filename}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </TabsContent>
+                  </Tabs>
                 </div>
               </div>
             </div>
@@ -859,7 +1519,9 @@ const PrintOnShirtView = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-max_images">Max Images to Generate</Label>
+                  <Label htmlFor="edit-max_images">
+                    Max Images to Generate
+                  </Label>
                   <Input
                     id="edit-max_images"
                     type="number"
@@ -901,9 +1563,7 @@ const PrintOnShirtView = () => {
                     }))
                   }
                 />
-                <Label htmlFor="edit-schedule_enabled">
-                  Enable schedule
-                </Label>
+                <Label htmlFor="edit-schedule_enabled">Enable schedule</Label>
               </div>
             </div>
 
@@ -998,6 +1658,15 @@ const PrintOnShirtView = () => {
                     <Button
                       variant="outline"
                       size="sm"
+                      onClick={() => navigate(`/project/${project.id}/output2`)}
+                      className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+                    >
+                      <ImageIcon className="h-4 w-4 mr-2" />
+                      View Images
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={async () => {
                         try {
                           const { data: session } =
@@ -1037,8 +1706,8 @@ const PrintOnShirtView = () => {
                     >
                       <Zap className="h-4 w-4" />
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => handleEditSchedule(schedule)}
                     >
@@ -1095,6 +1764,65 @@ const PrintOnShirtView = () => {
                     <Activity className="h-3 w-3 inline mr-1" />
                     Multi-Image
                   </div>
+                </div>
+
+                {/* Image Stats */}
+                <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-medium">Generation Progress</h4>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate(`/project/${project.id}/output2`)}
+                      className="text-xs h-6 px-2"
+                    >
+                      View Gallery →
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-xs">
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-green-600">
+                        {schedule.completed_images || 0}
+                      </div>
+                      <div className="text-muted-foreground">Completed</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-red-600">
+                        {schedule.failed_images || 0}
+                      </div>
+                      <div className="text-muted-foreground">Failed</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-lg font-bold text-blue-600">
+                        {schedule.total_images || 0}
+                      </div>
+                      <div className="text-muted-foreground">Total</div>
+                    </div>
+                  </div>
+                  {!schedule.schedule_enabled &&
+                    schedule.total_images &&
+                    schedule.total_images >=
+                      schedule.max_images_to_generate && (
+                      <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                        ⏸️ Auto-paused: Reached max limit (
+                        {schedule.max_images_to_generate} images).
+                        <button
+                          onClick={() => handleEditSchedule(schedule)}
+                          className="ml-1 underline hover:no-underline"
+                        >
+                          Increase limit to continue
+                        </button>
+                      </div>
+                    )}
+                  {!schedule.schedule_enabled &&
+                    (!schedule.total_images ||
+                      schedule.total_images <
+                        schedule.max_images_to_generate) && (
+                      <div className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                        ⏸️ Schedule paused manually. Toggle switch to resume
+                        generation.
+                      </div>
+                    )}
                 </div>
 
                 <div className="mb-4">

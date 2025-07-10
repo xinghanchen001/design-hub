@@ -1,5 +1,9 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import {
+  generateStoragePath,
+  getBucketName,
+} from '../_shared/storage-utils.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,10 +31,19 @@ Deno.serve(async (req: Request) => {
 
     console.log('🔍 Checking for completed predictions...');
 
-    // Get all processing images with prediction IDs
+    // Get all processing images with prediction IDs and related schedule info
     const { data: processingImages, error: fetchError } = await supabase
       .from('print_on_shirt_images')
-      .select('*')
+      .select(
+        `
+        *,
+        print_on_shirt_schedules (
+          id,
+          project_id,
+          name
+        )
+      `
+      )
       .eq('status', 'processing')
       .not('prediction_id', 'is', null);
 
@@ -101,13 +114,23 @@ Deno.serve(async (req: Request) => {
               }
 
               const imageBuffer = await imageResponse.arrayBuffer();
-              const fileName = `${
-                image.user_id
-              }/${Date.now()}_print_on_shirt.png`;
+
+              // Get project_id from schedule or use a default
+              const projectId =
+                image.print_on_shirt_schedules?.project_id || 'default-project';
+
+              // Generate consistent storage path using utility
+              const fileName = generateStoragePath({
+                userId: image.user_id,
+                projectId: projectId,
+                projectType: 'project2',
+                timestamp: Date.now(),
+              });
 
               console.log(`📤 Uploading to storage: ${fileName}`);
+              const bucketName = getBucketName('generated');
               const { error: uploadError } = await supabase.storage
-                .from('ai-generated-images')
+                .from(bucketName)
                 .upload(fileName, imageBuffer, {
                   contentType: 'image/png',
                   upsert: false,
@@ -121,9 +144,7 @@ Deno.serve(async (req: Request) => {
               // Get public URL
               const {
                 data: { publicUrl },
-              } = supabase.storage
-                .from('ai-generated-images')
-                .getPublicUrl(fileName);
+              } = supabase.storage.from(bucketName).getPublicUrl(fileName);
 
               console.log(`🔗 Public URL: ${publicUrl}`);
 

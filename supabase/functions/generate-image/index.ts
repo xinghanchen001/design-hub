@@ -1,14 +1,19 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
-import Replicate from 'https://esm.sh/replicate@0.25.2';
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { createClient } from 'jsr:@supabase/supabase-js@2';
+import Replicate from 'npm:replicate';
+import {
+  generateStoragePath,
+  getBucketName,
+} from '../_shared/storage-utils.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -73,6 +78,7 @@ serve(async (req) => {
 
     console.log('Project found:', project.name);
     console.log('Project prompt:', project.prompt);
+    console.log('Use bucket images:', project.use_bucket_images);
 
     // Create or update generation job
     let generation_job_id = job_id;
@@ -117,99 +123,282 @@ serve(async (req) => {
       }
     }
 
-    // Generate image using Replicate
-    console.log('Starting image generation with Replicate...');
-    const startTime = Date.now();
+    let totalImagesGenerated = 0;
+    const generatedImages = [];
 
-    const output = await replicate.run('black-forest-labs/flux-kontext-max', {
-      input: {
+    // Check if this project uses bucket images for batch generation
+    if (project.use_bucket_images) {
+      console.log(
+        '🗂️ Bucket mode: Fetching bucket images for batch generation...'
+      );
+
+      // Fetch all bucket images for this project
+      const { data: bucketImages, error: bucketError } = await supabase
+        .from('project_bucket_images')
+        .select('*')
+        .eq('project_id', project_id)
+        .eq('user_id', project.user_id)
+        .order('created_at', { ascending: false });
+
+      if (bucketError) {
+        console.error('Error fetching bucket images:', bucketError);
+        throw new Error(
+          `Failed to fetch bucket images: ${bucketError.message}`
+        );
+      }
+
+      if (!bucketImages || bucketImages.length === 0) {
+        console.log('⚠️ No bucket images found for batch generation');
+        throw new Error(
+          'No bucket images found for batch generation. Please upload images to the bucket first.'
+        );
+      }
+
+      console.log(
+        `📸 Found ${bucketImages.length} bucket images for batch generation`
+      );
+
+      // Generate one image for each bucket image
+      for (const bucketImage of bucketImages) {
+        try {
+          console.log(
+            `🎨 Generating image ${totalImagesGenerated + 1}/${
+              bucketImages.length
+            } using bucket image: ${bucketImage.filename}`
+          );
+
+          const startTime = Date.now();
+
+          // Use bucket image as reference image in the generation
+          const output = await replicate.run(
+            'black-forest-labs/flux-kontext-max',
+            {
+              input: {
+                prompt: project.prompt,
+                image: bucketImage.image_url, // Use bucket image as reference
+                aspect_ratio: '1:1',
+                output_format: 'png',
+                safety_tolerance: 2,
+              },
+            }
+          );
+
+          const generationTime = (Date.now() - startTime) / 1000;
+          console.log(
+            `✅ Image generation completed in ${generationTime} seconds`
+          );
+          console.log('Generated image URL:', output);
+
+          if (!output || typeof output !== 'string') {
+            throw new Error('Invalid output from Replicate API');
+          }
+
+          // Download and store the generated image
+          const imageResponse = await fetch(output);
+          if (!imageResponse.ok) {
+            throw new Error(
+              `Failed to download image: ${imageResponse.statusText}`
+            );
+          }
+
+          const imageBlob = await imageResponse.blob();
+          const imageBuffer = await imageBlob.arrayBuffer();
+
+          // Create unique filename for this generation
+          const timestamp = Date.now() + totalImagesGenerated; // Add offset to prevent conflicts
+          const filename = generateStoragePath({
+            userId: project.user_id,
+            projectId: project_id,
+            projectType: 'project1',
+            timestamp: timestamp,
+          });
+
+          console.log('📤 Uploading image to storage bucket:', filename);
+          const bucketName = getBucketName('generated');
+          const { error: uploadError } = await supabase.storage
+            .from(bucketName)
+            .upload(filename, imageBuffer, {
+              contentType: 'image/png',
+              cacheControl: '3600',
+              upsert: false,
+            });
+
+          if (uploadError) {
+            console.error('Storage upload error:', uploadError);
+            throw new Error(
+              `Failed to upload image to storage: ${uploadError.message}`
+            );
+          }
+
+          // Get the public URL for the stored image
+          const { data: publicUrlData } = supabase.storage
+            .from(bucketName)
+            .getPublicUrl(filename);
+
+          const storedImageUrl = publicUrlData.publicUrl;
+          console.log('📥 Image stored successfully at:', storedImageUrl);
+
+          // Save generated image to database
+          const { data: savedImage, error: imageError } = await supabase
+            .from('generated_images')
+            .insert([
+              {
+                project_id: project_id,
+                generation_job_id: generation_job_id,
+                image_url: storedImageUrl,
+                storage_path: filename,
+                prompt: project.prompt,
+                reference_image_url: bucketImage.image_url,
+                bucket_image_id: bucketImage.id,
+                model_used: 'flux-kontext-max',
+                aspect_ratio: '1:1',
+                generation_time_seconds: generationTime,
+              },
+            ])
+            .select()
+            .single();
+
+          if (imageError) {
+            console.error('Image save error:', imageError);
+            throw new Error(
+              `Failed to save generated image: ${imageError.message}`
+            );
+          }
+
+          generatedImages.push(savedImage);
+          totalImagesGenerated++;
+          console.log(
+            `✅ Successfully generated and saved image ${totalImagesGenerated}/${bucketImages.length}`
+          );
+        } catch (error) {
+          console.error(
+            `❌ Error generating image for bucket image ${bucketImage.filename}:`,
+            error
+          );
+          // Continue with next image instead of failing completely
+          continue;
+        }
+      }
+    } else {
+      // Original single image generation logic
+      console.log(
+        '🎨 Single mode: Starting image generation with Replicate...'
+      );
+      const startTime = Date.now();
+
+      const replicateInput: any = {
         prompt: project.prompt,
         aspect_ratio: '1:1',
         output_format: 'png',
         safety_tolerance: 2,
-      },
-    });
+      };
 
-    const generationTime = (Date.now() - startTime) / 1000;
-    console.log('Image generation completed in', generationTime, 'seconds');
-    console.log('Generated image URL:', output);
+      // Add reference image if provided
+      if (project.reference_image_url) {
+        replicateInput.image = project.reference_image_url;
+        console.log('Using reference image:', project.reference_image_url);
+      }
 
-    if (!output || typeof output !== 'string') {
-      throw new Error('Invalid output from Replicate API');
-    }
-
-    // Download and store the image in Supabase storage
-    console.log('Downloading generated image from:', output);
-    const imageResponse = await fetch(output);
-
-    if (!imageResponse.ok) {
-      throw new Error(`Failed to download image: ${imageResponse.statusText}`);
-    }
-
-    const imageBlob = await imageResponse.blob();
-    const imageBuffer = await imageBlob.arrayBuffer();
-
-    // Create a unique filename with timestamp and project info
-    const timestamp = Date.now();
-    const filename = `${project.user_id}/${project_id}/generated_${timestamp}.png`;
-
-    console.log('Uploading image to storage bucket:', filename);
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('ai-generated-images')
-      .upload(filename, imageBuffer, {
-        contentType: 'image/png',
-        cacheControl: '3600',
-        upsert: false,
+      const output = await replicate.run('black-forest-labs/flux-kontext-max', {
+        input: replicateInput,
       });
 
-    if (uploadError) {
-      console.error('Storage upload error:', uploadError);
-      throw new Error(
-        `Failed to upload image to storage: ${uploadError.message}`
-      );
-    }
+      const generationTime = (Date.now() - startTime) / 1000;
+      console.log('Image generation completed in', generationTime, 'seconds');
+      console.log('Generated image URL:', output);
 
-    // Get the public URL for the stored image
-    const { data: publicUrlData } = supabase.storage
-      .from('ai-generated-images')
-      .getPublicUrl(filename);
+      if (!output || typeof output !== 'string') {
+        throw new Error('Invalid output from Replicate API');
+      }
 
-    const storedImageUrl = publicUrlData.publicUrl;
+      // Download and store the image in Supabase storage
+      console.log('Downloading generated image from:', output);
+      const imageResponse = await fetch(output);
 
-    console.log('Image stored successfully at:', storedImageUrl);
+      if (!imageResponse.ok) {
+        throw new Error(
+          `Failed to download image: ${imageResponse.statusText}`
+        );
+      }
 
-    // Save generated image to database with storage path
-    console.log('Saving generated image to database...');
-    const { data: savedImage, error: imageError } = await supabase
-      .from('generated_images')
-      .insert([
-        {
-          project_id: project_id,
-          generation_job_id: generation_job_id,
-          image_url: storedImageUrl, // Use stored URL instead of external URL
-          storage_path: filename, // Store the path for reference
-          prompt: project.prompt,
-          model_used: 'flux-kontext-max',
-          aspect_ratio: '1:1',
-          generation_time_seconds: generationTime,
-        },
-      ])
-      .select()
-      .single();
+      const imageBlob = await imageResponse.blob();
+      const imageBuffer = await imageBlob.arrayBuffer();
 
-    if (imageError) {
-      console.error('Image save error:', imageError);
-      throw new Error(`Failed to save generated image: ${imageError.message}`);
+      // Create a unique filename with timestamp and project info
+      const timestamp = Date.now();
+      const filename = generateStoragePath({
+        userId: project.user_id,
+        projectId: project_id,
+        projectType: 'project1',
+        timestamp: timestamp,
+      });
+
+      console.log('Uploading image to storage bucket:', filename);
+      const bucketName = getBucketName('generated');
+      const { error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .upload(filename, imageBuffer, {
+          contentType: 'image/png',
+          cacheControl: '3600',
+          upsert: false,
+        });
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        throw new Error(
+          `Failed to upload image to storage: ${uploadError.message}`
+        );
+      }
+
+      // Get the public URL for the stored image
+      const { data: publicUrlData } = supabase.storage
+        .from(bucketName)
+        .getPublicUrl(filename);
+
+      const storedImageUrl = publicUrlData.publicUrl;
+      console.log('Image stored successfully at:', storedImageUrl);
+
+      // Save generated image to database with storage path
+      console.log('Saving generated image to database...');
+      const { data: savedImage, error: imageError } = await supabase
+        .from('generated_images')
+        .insert([
+          {
+            project_id: project_id,
+            generation_job_id: generation_job_id,
+            image_url: storedImageUrl,
+            storage_path: filename,
+            prompt: project.prompt,
+            reference_image_url: project.reference_image_url,
+            model_used: 'flux-kontext-max',
+            aspect_ratio: '1:1',
+            generation_time_seconds: generationTime,
+          },
+        ])
+        .select()
+        .single();
+
+      if (imageError) {
+        console.error('Image save error:', imageError);
+        throw new Error(
+          `Failed to save generated image: ${imageError.message}`
+        );
+      }
+
+      generatedImages.push(savedImage);
+      totalImagesGenerated = 1;
     }
 
     // Update generation job as completed
-    console.log('Updating job status to completed');
+    console.log(
+      `Updating job status to completed (generated ${totalImagesGenerated} images)`
+    );
     const { error: jobCompleteError } = await supabase
       .from('generation_jobs')
       .update({
         status: 'completed',
         completed_at: new Date().toISOString(),
-        images_generated: 1,
+        images_generated: totalImagesGenerated,
       })
       .eq('id', generation_job_id);
 
@@ -236,8 +425,9 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        image: savedImage,
-        generation_time_seconds: generationTime,
+        images_generated: totalImagesGenerated,
+        images: generatedImages,
+        bucket_mode: project.use_bucket_images || false,
         job_id: generation_job_id,
       }),
       {
@@ -281,5 +471,3 @@ serve(async (req) => {
     );
   }
 });
-
-})

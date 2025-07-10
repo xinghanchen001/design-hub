@@ -6,3 +6,6 @@ export { default as ImagesView } from './ImagesView';
 export { default as PrintOnShirtView } from './PrintOnShirtView';
 export { default as JournalView } from './JournalView';
 export { default as SettingsView } from './SettingsView';
+export { default as Output2View } from './Output2View';
+export { default as Output3View } from './Output3View';
+export { default as BucketView } from './BucketView';
