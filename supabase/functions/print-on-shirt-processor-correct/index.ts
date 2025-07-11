@@ -21,6 +21,9 @@ interface PrintOnShirtSchedule {
   use_bucket_images?: boolean;
   bucket_image_1_id?: string;
   bucket_image_2_id?: string;
+  // Multi-select support
+  bucket_image_1_ids?: string[];
+  bucket_image_2_ids?: string[];
 }
 
 interface BucketImage {
@@ -168,36 +171,85 @@ Deno.serve(async (req: Request) => {
         if (schedule.use_bucket_images && schedule.project_id) {
           console.log(`🗂️ Bucket mode: Processing ${schedule.name} with bucket images`);
           
-          // Fetch all bucket images for this project
-          const { data: bucketImages, error: bucketError } = await supabase
-            .from('project_bucket_images')
-            .select('*')
-            .eq('project_id', schedule.project_id)
-            .eq('user_id', schedule.user_id)
-            .order('created_at', { ascending: false });
+          // Initialize combinations array
+          let combinations = [];
+          
+          // Check if we have multi-select arrays (new format)
+          if (schedule.bucket_image_1_ids && schedule.bucket_image_2_ids && 
+              schedule.bucket_image_1_ids.length > 0 && schedule.bucket_image_2_ids.length > 0) {
+            
+            console.log(`🎯 Multi-select mode: ${schedule.bucket_image_1_ids.length} images in set 1, ${schedule.bucket_image_2_ids.length} images in set 2`);
+            
+            // Fetch selected bucket images for set 1
+            const { data: bucketImages1, error: bucketError1 } = await supabase
+              .from('project_bucket_images')
+              .select('*')
+              .in('id', schedule.bucket_image_1_ids)
+              .eq('project_id', schedule.project_id);
 
-          if (bucketError) {
-            console.error('Error fetching bucket images:', bucketError);
-            throw new Error(`Failed to fetch bucket images: ${bucketError.message}`);
-          }
+            // Fetch selected bucket images for set 2  
+            const { data: bucketImages2, error: bucketError2 } = await supabase
+              .from('project_bucket_images')
+              .select('*')
+              .in('id', schedule.bucket_image_2_ids)
+              .eq('project_id', schedule.project_id);
 
-          if (!bucketImages || bucketImages.length === 0) {
-            console.log('⚠️ No bucket images found for batch generation');
-            throw new Error('No bucket images found for batch generation. Please upload images to the bucket first.');
-          }
+            if (bucketError1 || bucketError2) {
+              console.error('Error fetching selected bucket images:', bucketError1 || bucketError2);
+              throw new Error(`Failed to fetch selected bucket images: ${(bucketError1 || bucketError2)?.message}`);
+            }
 
-          console.log(`📸 Found ${bucketImages.length} bucket images for combinations`);
+            if (!bucketImages1?.length || !bucketImages2?.length) {
+              console.log('⚠️ Some selected bucket images not found');
+              throw new Error('Some selected bucket images not found. Please check your selection.');
+            }
 
-          // Generate all possible combinations of Image 1 × Image 2
-          const combinations = [];
-          for (const image1 of bucketImages) {
-            for (const image2 of bucketImages) {
-              if (image1.id !== image2.id) { // Don't combine image with itself
+            console.log(`📸 Found ${bucketImages1.length} images in set 1, ${bucketImages2.length} images in set 2`);
+
+            // Generate combinations from selected sets: Set 1 × Set 2
+            for (const image1 of bucketImages1) {
+              for (const image2 of bucketImages2) {
                 combinations.push({
                   image1,
                   image2,
                   combo_name: `${image1.filename} × ${image2.filename}`
                 });
+              }
+            }
+            
+          } else {
+            // Fallback to old logic - fetch all bucket images for this project
+            console.log(`🔄 Fallback mode: Using all bucket images for combinations`);
+            
+            const { data: bucketImages, error: bucketError } = await supabase
+              .from('project_bucket_images')
+              .select('*')
+              .eq('project_id', schedule.project_id)
+              .eq('user_id', schedule.user_id)
+              .order('created_at', { ascending: false });
+
+            if (bucketError) {
+              console.error('Error fetching bucket images:', bucketError);
+              throw new Error(`Failed to fetch bucket images: ${bucketError.message}`);
+            }
+
+            if (!bucketImages || bucketImages.length === 0) {
+              console.log('⚠️ No bucket images found for batch generation');
+              throw new Error('No bucket images found for batch generation. Please upload images to the bucket first.');
+            }
+
+            console.log(`📸 Found ${bucketImages.length} bucket images for combinations`);
+
+            // Generate all possible combinations of Image 1 × Image 2
+            for (const image1 of bucketImages) {
+              for (const image2 of bucketImages) {
+                if (image1.id !== image2.id) { // Don't combine image with itself
+                  combinations.push({
+                    image1,
+                    image2,
+                    combo_name: `${image1.filename} × ${image2.filename}`
+                  });
+                }
               }
             }
           }
@@ -218,7 +270,7 @@ Deno.serve(async (req: Request) => {
               console.log(`🎨 Generating combination ${i + 1}/${selectedCombinations.length}: ${combo_name}`);
 
               const prediction = await fetch(
-                'https://api.replicate.com/v1/predictions',
+                'https://api.replicate.com/v1/models/flux-kontext-apps/multi-image-kontext-max/predictions',
                 {
                   method: 'POST',
                   headers: {
@@ -226,7 +278,6 @@ Deno.serve(async (req: Request) => {
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    version: 'flux-kontext-apps/multi-image-kontext-max',
                     input: {
                       prompt: schedule.prompt,
                       input_image_1: image1.image_url,
@@ -301,7 +352,7 @@ Deno.serve(async (req: Request) => {
           console.log(`💭 Prompt: ${schedule.prompt}`);
 
           const prediction = await fetch(
-            'https://api.replicate.com/v1/predictions',
+            'https://api.replicate.com/v1/models/flux-kontext-apps/multi-image-kontext-max/predictions',
             {
               method: 'POST',
               headers: {
@@ -309,7 +360,6 @@ Deno.serve(async (req: Request) => {
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                version: 'flux-kontext-apps/multi-image-kontext-max',
                 input: {
                   prompt: schedule.prompt,
                   input_image_1: schedule.input_image_1_url,

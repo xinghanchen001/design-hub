@@ -88,10 +88,12 @@ interface PrintOnShirtSchedule {
   is_active: boolean;
   created_at: string;
   updated_at: string;
-  // Add bucket support
+  // Add bucket support - updated for multi-select
   use_bucket_images?: boolean;
-  bucket_image_1_id?: string;
-  bucket_image_2_id?: string;
+  bucket_image_1_ids?: string[]; // Support multiple images for reference 1
+  bucket_image_2_ids?: string[]; // Support multiple images for reference 2
+  bucket_image_1_id?: string; // Keep for backward compatibility
+  bucket_image_2_id?: string; // Keep for backward compatibility
   // Add stats
   total_images?: number;
   completed_images?: number;
@@ -114,18 +116,16 @@ const PrintOnShirtView = () => {
     useState<PrintOnShirtSchedule | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Bucket state
+  // Bucket state - updated for multi-select
   const [bucketImages, setBucketImages] = useState<BucketImage[]>([]);
   const [loadingBucketImages, setLoadingBucketImages] = useState(false);
-  const [selectedBucketImage1, setSelectedBucketImage1] =
-    useState<BucketImage | null>(null);
-  const [selectedBucketImage2, setSelectedBucketImage2] =
-    useState<BucketImage | null>(null);
-  const [imageMode1, setImageMode1] = useState<'upload' | 'bucket'>('upload');
-  const [imageMode2, setImageMode2] = useState<'upload' | 'bucket'>('upload');
+  const [selectedBucketImages1, setSelectedBucketImages1] =
+    useState<BucketImage[]>([]);
+  const [selectedBucketImages2, setSelectedBucketImages2] =
+    useState<BucketImage[]>([]);
   const [useBucketImages, setUseBucketImages] = useState(false);
 
-  // Form state
+  // Form state - updated for multi-select
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -137,9 +137,9 @@ const PrintOnShirtView = () => {
     schedule_duration_hours: 24,
     max_images_to_generate: 10,
     generation_interval_minutes: 60,
-    use_bucket_images: false,
-    bucket_image_1_id: '',
-    bucket_image_2_id: '',
+    use_bucket_images: true, // Always true since bucket is the only option
+    bucket_image_1_ids: [] as string[],
+    bucket_image_2_ids: [] as string[],
   });
 
   const aspectRatios = [
@@ -223,35 +223,83 @@ const PrintOnShirtView = () => {
 
   const handleBucketImageSelect = (image: BucketImage, imageNumber: 1 | 2) => {
     if (imageNumber === 1) {
-      setSelectedBucketImage1(image);
+      const isAlreadySelected = selectedBucketImages1.some(img => img.id === image.id);
+      if (isAlreadySelected) {
+        // Remove from selection
+        const newSelection = selectedBucketImages1.filter(img => img.id !== image.id);
+        setSelectedBucketImages1(newSelection);
+        setFormData((prev) => ({
+          ...prev,
+          bucket_image_1_ids: newSelection.map(img => img.id),
+          input_image_1_url: newSelection.length > 0 ? newSelection[0].image_url : '',
+        }));
+      } else {
+        // Add to selection
+        const newSelection = [...selectedBucketImages1, image];
+        setSelectedBucketImages1(newSelection);
+        setFormData((prev) => ({
+          ...prev,
+          bucket_image_1_ids: newSelection.map(img => img.id),
+          input_image_1_url: newSelection[0].image_url,
+        }));
+      }
+    } else {
+      const isAlreadySelected = selectedBucketImages2.some(img => img.id === image.id);
+      if (isAlreadySelected) {
+        // Remove from selection
+        const newSelection = selectedBucketImages2.filter(img => img.id !== image.id);
+        setSelectedBucketImages2(newSelection);
+        setFormData((prev) => ({
+          ...prev,
+          bucket_image_2_ids: newSelection.map(img => img.id),
+          input_image_2_url: newSelection.length > 0 ? newSelection[0].image_url : '',
+        }));
+      } else {
+        // Add to selection
+        const newSelection = [...selectedBucketImages2, image];
+        setSelectedBucketImages2(newSelection);
+        setFormData((prev) => ({
+          ...prev,
+          bucket_image_2_ids: newSelection.map(img => img.id),
+          input_image_2_url: newSelection[0].image_url,
+        }));
+      }
+    }
+  };
+
+  const removeBucketSelection = (image: BucketImage, imageNumber: 1 | 2) => {
+    if (imageNumber === 1) {
+      const newSelection = selectedBucketImages1.filter(img => img.id !== image.id);
+      setSelectedBucketImages1(newSelection);
       setFormData((prev) => ({
         ...prev,
-        bucket_image_1_id: image.id,
-        input_image_1_url: image.image_url,
+        bucket_image_1_ids: newSelection.map(img => img.id),
+        input_image_1_url: newSelection.length > 0 ? newSelection[0].image_url : '',
       }));
     } else {
-      setSelectedBucketImage2(image);
+      const newSelection = selectedBucketImages2.filter(img => img.id !== image.id);
+      setSelectedBucketImages2(newSelection);
       setFormData((prev) => ({
         ...prev,
-        bucket_image_2_id: image.id,
-        input_image_2_url: image.image_url,
+        bucket_image_2_ids: newSelection.map(img => img.id),
+        input_image_2_url: newSelection.length > 0 ? newSelection[0].image_url : '',
       }));
     }
   };
 
-  const removeBucketSelection = (imageNumber: 1 | 2) => {
+  const clearAllBucketSelections = (imageNumber: 1 | 2) => {
     if (imageNumber === 1) {
-      setSelectedBucketImage1(null);
+      setSelectedBucketImages1([]);
       setFormData((prev) => ({
         ...prev,
-        bucket_image_1_id: '',
+        bucket_image_1_ids: [],
         input_image_1_url: '',
       }));
     } else {
-      setSelectedBucketImage2(null);
+      setSelectedBucketImages2([]);
       setFormData((prev) => ({
         ...prev,
-        bucket_image_2_id: '',
+        bucket_image_2_ids: [],
         input_image_2_url: '',
       }));
     }
@@ -304,8 +352,8 @@ const PrintOnShirtView = () => {
       return;
     }
 
-    if (!formData.input_image_1_url || !formData.input_image_2_url) {
-      toast.error('Please upload both reference images');
+    if (selectedBucketImages1.length === 0 || selectedBucketImages2.length === 0) {
+      toast.error('Please select at least one image from each reference set');
       return;
     }
 
@@ -326,9 +374,9 @@ const PrintOnShirtView = () => {
           schedule_duration_hours: formData.schedule_duration_hours,
           max_images_to_generate: formData.max_images_to_generate,
           generation_interval_minutes: formData.generation_interval_minutes,
-          use_bucket_images: formData.use_bucket_images,
-          bucket_image_1_id: formData.bucket_image_1_id || null,
-          bucket_image_2_id: formData.bucket_image_2_id || null,
+          use_bucket_images: true, // Always true since bucket is the only option
+          bucket_image_1_ids: formData.bucket_image_1_ids,
+          bucket_image_2_ids: formData.bucket_image_2_ids,
         })
         .select()
         .single();
@@ -349,16 +397,14 @@ const PrintOnShirtView = () => {
         schedule_duration_hours: 24,
         max_images_to_generate: 10,
         generation_interval_minutes: 60,
-        use_bucket_images: false,
-        bucket_image_1_id: '',
-        bucket_image_2_id: '',
+        use_bucket_images: true,
+        bucket_image_1_ids: [],
+        bucket_image_2_ids: [],
       });
 
       // Reset bucket state
-      setSelectedBucketImage1(null);
-      setSelectedBucketImage2(null);
-      setImageMode1('upload');
-      setImageMode2('upload');
+      setSelectedBucketImages1([]);
+      setSelectedBucketImages2([]);
       setUseBucketImages(false);
 
       setIsCreating(false);
@@ -384,31 +430,23 @@ const PrintOnShirtView = () => {
       max_images_to_generate: schedule.max_images_to_generate,
       generation_interval_minutes: schedule.generation_interval_minutes,
       use_bucket_images: schedule.use_bucket_images || false,
-      bucket_image_1_id: schedule.bucket_image_1_id || '',
-      bucket_image_2_id: schedule.bucket_image_2_id || '',
+      bucket_image_1_ids: schedule.bucket_image_1_ids || [],
+      bucket_image_2_ids: schedule.bucket_image_2_ids || [],
     });
 
-    // Set bucket images if they exist
-    if (schedule.use_bucket_images) {
-      setUseBucketImages(true);
-      if (schedule.bucket_image_1_id) {
-        const bucketImage1 = bucketImages.find(
-          (img) => img.id === schedule.bucket_image_1_id
-        );
-        if (bucketImage1) {
-          setSelectedBucketImage1(bucketImage1);
-          setImageMode1('bucket');
-        }
-      }
-      if (schedule.bucket_image_2_id) {
-        const bucketImage2 = bucketImages.find(
-          (img) => img.id === schedule.bucket_image_2_id
-        );
-        if (bucketImage2) {
-          setSelectedBucketImage2(bucketImage2);
-          setImageMode2('bucket');
-        }
-      }
+    // Set bucket images - always enabled
+    setUseBucketImages(true);
+    if (schedule.bucket_image_1_ids && schedule.bucket_image_1_ids.length > 0) {
+      const bucketImages1 = bucketImages.filter(
+        (img) => schedule.bucket_image_1_ids!.includes(img.id)
+      );
+      setSelectedBucketImages1(bucketImages1);
+    }
+    if (schedule.bucket_image_2_ids && schedule.bucket_image_2_ids.length > 0) {
+      const bucketImages2 = bucketImages.filter(
+        (img) => schedule.bucket_image_2_ids!.includes(img.id)
+      );
+      setSelectedBucketImages2(bucketImages2);
     }
 
     setIsEditing(true);
@@ -422,8 +460,8 @@ const PrintOnShirtView = () => {
       return;
     }
 
-    if (!formData.input_image_1_url || !formData.input_image_2_url) {
-      toast.error('Please upload both reference images');
+    if (selectedBucketImages1.length === 0 || selectedBucketImages2.length === 0) {
+      toast.error('Please select at least one image from each reference set');
       return;
     }
 
@@ -443,9 +481,9 @@ const PrintOnShirtView = () => {
           schedule_duration_hours: formData.schedule_duration_hours,
           max_images_to_generate: formData.max_images_to_generate,
           generation_interval_minutes: formData.generation_interval_minutes,
-          use_bucket_images: formData.use_bucket_images,
-          bucket_image_1_id: formData.bucket_image_1_id || null,
-          bucket_image_2_id: formData.bucket_image_2_id || null,
+          use_bucket_images: true, // Always true since bucket is the only option
+          bucket_image_1_ids: formData.bucket_image_1_ids,
+          bucket_image_2_ids: formData.bucket_image_2_ids,
         })
         .eq('id', editingSchedule.id);
 
@@ -463,16 +501,14 @@ const PrintOnShirtView = () => {
         schedule_duration_hours: 24,
         max_images_to_generate: 10,
         generation_interval_minutes: 60,
-        use_bucket_images: false,
-        bucket_image_1_id: '',
-        bucket_image_2_id: '',
+        use_bucket_images: true,
+        bucket_image_1_ids: [],
+        bucket_image_2_ids: [],
       });
 
       // Reset bucket state
-      setSelectedBucketImage1(null);
-      setSelectedBucketImage2(null);
-      setImageMode1('upload');
-      setImageMode2('upload');
+      setSelectedBucketImages1([]);
+      setSelectedBucketImages2([]);
       setUseBucketImages(false);
 
       setIsEditing(false);
@@ -502,16 +538,14 @@ const PrintOnShirtView = () => {
       schedule_duration_hours: 24,
       max_images_to_generate: 10,
       generation_interval_minutes: 60,
-      use_bucket_images: false,
-      bucket_image_1_id: '',
-      bucket_image_2_id: '',
+      use_bucket_images: true,
+      bucket_image_1_ids: [],
+      bucket_image_2_ids: [],
     });
 
     // Reset bucket state
-    setSelectedBucketImage1(null);
-    setSelectedBucketImage2(null);
-    setImageMode1('upload');
-    setImageMode2('upload');
+    setSelectedBucketImages1([]);
+    setSelectedBucketImages2([]);
     setUseBucketImages(false);
   };
 
@@ -657,361 +691,290 @@ const PrintOnShirtView = () => {
               />
             </div>
 
-            {/* Image Upload Section */}
+            {/* Image Selection Section */}
             <div className="space-y-6">
-              {/* Use Bucket Images Toggle */}
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="use-bucket-images"
-                  checked={useBucketImages}
-                  onCheckedChange={(checked) => {
-                    setUseBucketImages(checked);
-                    setFormData((prev) => ({
-                      ...prev,
-                      use_bucket_images: checked,
-                    }));
-                    if (checked) {
-                      toast.info(
-                        'When using bucket images, the schedule will generate one image for each combination of bucket images.'
-                      );
-                    }
-                  }}
-                />
-                <Label htmlFor="use-bucket-images">
-                  Use bucket images for batch generation
-                </Label>
-              </div>
 
-              {useBucketImages && (
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm text-muted-foreground">
-                    <strong>Batch Generation Mode:</strong> When enabled, this
-                    schedule will generate one image for each possible
-                    combination of images from your bucket. Select bucket images
-                    below to use as references.
-                  </p>
+              {/* Batch Generation Information */}
+              <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
+                <div className="flex items-start gap-3">
+                  <div className="flex-shrink-0 mt-0.5">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-blue-900 mb-2">
+                      🔄 Batch Generation Mode
+                    </h4>
+                    <p className="text-sm text-blue-800 mb-2">
+                      This schedule will generate images for <strong>every combination</strong> of selected bucket images:
+                    </p>
+                    <div className="text-xs text-blue-700 space-y-1">
+                      <div>• Set 1: {selectedBucketImages1.length} image{selectedBucketImages1.length !== 1 ? 's' : ''} selected</div>
+                      <div>• Set 2: {selectedBucketImages2.length} image{selectedBucketImages2.length !== 1 ? 's' : ''} selected</div>
+                      {selectedBucketImages1.length > 0 && selectedBucketImages2.length > 0 && (
+                        <div className="mt-2 font-medium">
+                          📊 Total combinations: {selectedBucketImages1.length} × {selectedBucketImages2.length} = {selectedBucketImages1.length * selectedBucketImages2.length} images will be generated
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Image 1 */}
                 <div className="space-y-4">
-                  <Label>Reference Image 1 *</Label>
-                  <Tabs
-                    value={imageMode1}
-                    onValueChange={(value) =>
-                      setImageMode1(value as 'upload' | 'bucket')
-                    }
-                  >
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="upload">Upload</TabsTrigger>
-                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="upload" className="space-y-4">
-                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                        {formData.input_image_1_url &&
-                        imageMode1 === 'upload' &&
-                        !selectedBucketImage1 ? (
-                          <div className="space-y-4">
-                            <img
-                              src={formData.input_image_1_url}
-                              alt="Reference 1"
-                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                            />
+                  <Label>Reference Images Set 1 * (Select multiple for batch generation)</Label>
+                  
+                  {loadingBucketImages ? (
+                    <div className="text-center py-8">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        Loading bucket images...
+                      </p>
+                    </div>
+                  ) : bucketImages.length === 0 ? (
+                    <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                      <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-2">
+                        No images in bucket
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Upload images to your bucket first to select them here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Selected Images Display */}
+                      {selectedBucketImages1.length > 0 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium">
+                              Selected Images ({selectedBucketImages1.length})
+                            </h4>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  input_image_1_url: '',
-                                }))
-                              }
+                              onClick={() => clearAllBucketSelections(1)}
                             >
-                              <X className="h-4 w-4 mr-2" />
-                              Remove
+                              Clear All
                             </Button>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                            <div>
-                              <p className="text-sm font-medium">
-                                Upload first image
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                JPG, PNG, GIF, or WebP
-                              </p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const input = document.createElement('input');
-                                input.type = 'file';
-                                input.accept = 'image/*';
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement)
-                                    .files?.[0];
-                                  if (file) handleImageUpload(file, 1);
-                                };
-                                input.click();
-                              }}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Choose File
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="bucket" className="space-y-4">
-                      {loadingBucketImages ? (
-                        <div className="text-center py-8">
-                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-                          <p className="text-muted-foreground">
-                            Loading bucket images...
-                          </p>
-                        </div>
-                      ) : bucketImages.length === 0 ? (
-                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
-                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="text-muted-foreground mb-2">
-                            No images in bucket
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Upload images to your bucket first to select them
-                            here.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {selectedBucketImage1 && (
-                            <div className="space-y-4">
-                              <div className="relative">
-                                <img
-                                  src={selectedBucketImage1.image_url}
-                                  alt={selectedBucketImage1.filename}
-                                  className="w-full max-h-32 object-contain rounded-lg border"
-                                />
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  className="absolute top-2 right-2"
-                                  onClick={() => removeBucketSelection(1)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <ImageIcon className="h-4 w-4" />
-                                <span>{selectedBucketImage1.filename}</span>
-                                <span>
-                                  (
-                                  {formatFileSize(
-                                    selectedBucketImage1.file_size
-                                  )}
-                                  )
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {!selectedBucketImage1 && (
-                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
-                              {bucketImages.map((image) => (
-                                <div
-                                  key={image.id}
-                                  className="relative group cursor-pointer"
-                                  onClick={() =>
-                                    handleBucketImageSelect(image, 1)
-                                  }
-                                >
-                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
-                                    <img
-                                      src={image.image_url}
-                                      alt={image.filename}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Check className="h-8 w-8 text-white" />
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground mt-1 truncate">
-                                    {image.filename}
-                                  </p>
+                          <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                            {selectedBucketImages1.map((image) => (
+                              <div
+                                key={image.id}
+                                className="relative group"
+                              >
+                                <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
+                                    onClick={() => removeBucketSelection(image, 1)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
-                    </TabsContent>
-                  </Tabs>
+
+                      {/* Available Images Grid */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">
+                          Available Images (click to select/deselect)
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                          {bucketImages.map((image) => {
+                            const isSelected = selectedBucketImages1.some(img => img.id === image.id);
+                            return (
+                              <div
+                                key={image.id}
+                                className={`relative group cursor-pointer ${
+                                  isSelected ? 'ring-2 ring-primary' : ''
+                                }`}
+                                onClick={() => handleBucketImageSelect(image, 1)}
+                              >
+                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                  isSelected 
+                                    ? 'border-primary border-2' 
+                                    : 'border-border/50 hover:border-primary'
+                                }`}>
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                    isSelected 
+                                      ? 'bg-primary/20' 
+                                      : 'bg-black/0 group-hover:bg-black/20'
+                                  }`}>
+                                    <div className={`transition-opacity ${
+                                      isSelected 
+                                        ? 'opacity-100' 
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}>
+                                      {isSelected ? (
+                                        <div className="bg-primary rounded-full p-1">
+                                          <Check className="h-6 w-6 text-white" />
+                                        </div>
+                                      ) : (
+                                        <Check className="h-8 w-8 text-white" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Image 2 */}
                 <div className="space-y-4">
-                  <Label>Reference Image 2 *</Label>
-                  <Tabs
-                    value={imageMode2}
-                    onValueChange={(value) =>
-                      setImageMode2(value as 'upload' | 'bucket')
-                    }
-                  >
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="upload">Upload</TabsTrigger>
-                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="upload" className="space-y-4">
-                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                        {formData.input_image_2_url &&
-                        imageMode2 === 'upload' &&
-                        !selectedBucketImage2 ? (
-                          <div className="space-y-4">
-                            <img
-                              src={formData.input_image_2_url}
-                              alt="Reference 2"
-                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                            />
+                  <Label>Reference Images Set 2 * (Select multiple for batch generation)</Label>
+                  
+                  {loadingBucketImages ? (
+                    <div className="text-center py-8">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        Loading bucket images...
+                      </p>
+                    </div>
+                  ) : bucketImages.length === 0 ? (
+                    <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                      <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-2">
+                        No images in bucket
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Upload images to your bucket first to select them here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Selected Images Display */}
+                      {selectedBucketImages2.length > 0 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium">
+                              Selected Images ({selectedBucketImages2.length})
+                            </h4>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  input_image_2_url: '',
-                                }))
-                              }
+                              onClick={() => clearAllBucketSelections(2)}
                             >
-                              <X className="h-4 w-4 mr-2" />
-                              Remove
+                              Clear All
                             </Button>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                            <div>
-                              <p className="text-sm font-medium">
-                                Upload second image
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                JPG, PNG, GIF, or WebP
-                              </p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const input = document.createElement('input');
-                                input.type = 'file';
-                                input.accept = 'image/*';
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement)
-                                    .files?.[0];
-                                  if (file) handleImageUpload(file, 2);
-                                };
-                                input.click();
-                              }}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Choose File
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="bucket" className="space-y-4">
-                      {loadingBucketImages ? (
-                        <div className="text-center py-8">
-                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-                          <p className="text-muted-foreground">
-                            Loading bucket images...
-                          </p>
-                        </div>
-                      ) : bucketImages.length === 0 ? (
-                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
-                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="text-muted-foreground mb-2">
-                            No images in bucket
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Upload images to your bucket first to select them
-                            here.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {selectedBucketImage2 && (
-                            <div className="space-y-4">
-                              <div className="relative">
-                                <img
-                                  src={selectedBucketImage2.image_url}
-                                  alt={selectedBucketImage2.filename}
-                                  className="w-full max-h-32 object-contain rounded-lg border"
-                                />
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  className="absolute top-2 right-2"
-                                  onClick={() => removeBucketSelection(2)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <ImageIcon className="h-4 w-4" />
-                                <span>{selectedBucketImage2.filename}</span>
-                                <span>
-                                  (
-                                  {formatFileSize(
-                                    selectedBucketImage2.file_size
-                                  )}
-                                  )
-                                </span>
-                              </div>
-                            </div>
-                          )}
-
-                          {!selectedBucketImage2 && (
-                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
-                              {bucketImages.map((image) => (
-                                <div
-                                  key={image.id}
-                                  className="relative group cursor-pointer"
-                                  onClick={() =>
-                                    handleBucketImageSelect(image, 2)
-                                  }
-                                >
-                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
-                                    <img
-                                      src={image.image_url}
-                                      alt={image.filename}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Check className="h-8 w-8 text-white" />
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground mt-1 truncate">
-                                    {image.filename}
-                                  </p>
+                          <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                            {selectedBucketImages2.map((image) => (
+                              <div
+                                key={image.id}
+                                className="relative group"
+                              >
+                                <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
+                                    onClick={() => removeBucketSelection(image, 2)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
-                    </TabsContent>
-                  </Tabs>
+
+                      {/* Available Images Grid */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">
+                          Available Images (click to select/deselect)
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                          {bucketImages.map((image) => {
+                            const isSelected = selectedBucketImages2.some(img => img.id === image.id);
+                            return (
+                              <div
+                                key={image.id}
+                                className={`relative group cursor-pointer ${
+                                  isSelected ? 'ring-2 ring-primary' : ''
+                                }`}
+                                onClick={() => handleBucketImageSelect(image, 2)}
+                              >
+                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                  isSelected 
+                                    ? 'border-primary border-2' 
+                                    : 'border-border/50 hover:border-primary'
+                                }`}>
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                    isSelected 
+                                      ? 'bg-primary/20' 
+                                      : 'bg-black/0 group-hover:bg-black/20'
+                                  }`}>
+                                    <div className={`transition-opacity ${
+                                      isSelected 
+                                        ? 'opacity-100' 
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}>
+                                      {isSelected ? (
+                                        <div className="bg-primary rounded-full p-1">
+                                          <Check className="h-6 w-6 text-white" />
+                                        </div>
+                                      ) : (
+                                        <Check className="h-8 w-8 text-white" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1226,272 +1189,258 @@ const PrintOnShirtView = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Image 1 */}
                 <div className="space-y-4">
-                  <Label>Reference Image 1 *</Label>
-                  <Tabs value={imageMode1} onValueChange={(value) => setImageMode1(value as 'upload' | 'bucket')}>
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="upload">Upload</TabsTrigger>
-                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value="upload" className="space-y-4">
-                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                        {formData.input_image_1_url && imageMode1 === 'upload' && !selectedBucketImage1 ? (
-                          <div className="space-y-4">
-                            <img
-                              src={formData.input_image_1_url}
-                              alt="Reference 1"
-                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                            />
+                  <Label>Reference Images Set 1 * (Select multiple for batch generation)</Label>
+                  
+                  {loadingBucketImages ? (
+                    <div className="text-center py-8">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        Loading bucket images...
+                      </p>
+                    </div>
+                  ) : bucketImages.length === 0 ? (
+                    <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                      <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-2">
+                        No images in bucket
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Upload images to your bucket first to select them here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Selected Images Display */}
+                      {selectedBucketImages1.length > 0 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium">
+                              Selected Images ({selectedBucketImages1.length})
+                            </h4>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  input_image_1_url: '',
-                                }))
-                              }
+                              onClick={() => clearAllBucketSelections(1)}
                             >
-                              <X className="h-4 w-4 mr-2" />
-                              Remove
+                              Clear All
                             </Button>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                            <div>
-                              <p className="text-sm font-medium">Upload first image</p>
-                              <p className="text-xs text-muted-foreground">JPG, PNG, GIF, or WebP</p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const input = document.createElement('input');
-                                input.type = 'file';
-                                input.accept = 'image/*';
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement).files?.[0];
-                                  if (file) handleImageUpload(file, 1);
-                                };
-                                input.click();
-                              }}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Choose File
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="bucket" className="space-y-4">
-                      {loadingBucketImages ? (
-                        <div className="text-center py-8">
-                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-                          <p className="text-muted-foreground">Loading bucket images...</p>
-                        </div>
-                      ) : bucketImages.length === 0 ? (
-                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
-                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="text-muted-foreground mb-2">No images in bucket</p>
-                          <p className="text-sm text-muted-foreground">
-                            Upload images to your bucket first to select them here.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {selectedBucketImage1 && (
-                            <div className="space-y-4">
-                              <div className="relative">
-                                <img
-                                  src={selectedBucketImage1.image_url}
-                                  alt={selectedBucketImage1.filename}
-                                  className="w-full max-h-32 object-contain rounded-lg border"
-                                />
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  className="absolute top-2 right-2"
-                                  onClick={() => removeBucketSelection(1)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <ImageIcon className="h-4 w-4" />
-                                <span>{selectedBucketImage1.filename}</span>
-                                <span>({formatFileSize(selectedBucketImage1.file_size)})</span>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {!selectedBucketImage1 && (
-                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
-                              {bucketImages.map((image) => (
-                                <div 
-                                  key={image.id}
-                                  className="relative group cursor-pointer"
-                                  onClick={() => handleBucketImageSelect(image, 1)}
-                                >
-                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
-                                    <img
-                                      src={image.image_url}
-                                      alt={image.filename}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Check className="h-8 w-8 text-white" />
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground mt-1 truncate">
-                                    {image.filename}
-                                  </p>
+                          <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                            {selectedBucketImages1.map((image) => (
+                              <div
+                                key={image.id}
+                                className="relative group"
+                              >
+                                <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
+                                    onClick={() => removeBucketSelection(image, 1)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
-                    </TabsContent>
-                  </Tabs>
+
+                      {/* Available Images Grid */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">
+                          Available Images (click to select/deselect)
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                          {bucketImages.map((image) => {
+                            const isSelected = selectedBucketImages1.some(img => img.id === image.id);
+                            return (
+                              <div
+                                key={image.id}
+                                className={`relative group cursor-pointer ${
+                                  isSelected ? 'ring-2 ring-primary' : ''
+                                }`}
+                                onClick={() => handleBucketImageSelect(image, 1)}
+                              >
+                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                  isSelected 
+                                    ? 'border-primary border-2' 
+                                    : 'border-border/50 hover:border-primary'
+                                }`}>
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                    isSelected 
+                                      ? 'bg-primary/20' 
+                                      : 'bg-black/0 group-hover:bg-black/20'
+                                  }`}>
+                                    <div className={`transition-opacity ${
+                                      isSelected 
+                                        ? 'opacity-100' 
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}>
+                                      {isSelected ? (
+                                        <div className="bg-primary rounded-full p-1">
+                                          <Check className="h-6 w-6 text-white" />
+                                        </div>
+                                      ) : (
+                                        <Check className="h-8 w-8 text-white" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Image 2 */}
                 <div className="space-y-4">
-                  <Label>Reference Image 2 *</Label>
-                  <Tabs value={imageMode2} onValueChange={(value) => setImageMode2(value as 'upload' | 'bucket')}>
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="upload">Upload</TabsTrigger>
-                      <TabsTrigger value="bucket">From Bucket</TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value="upload" className="space-y-4">
-                      <div className="border-2 border-dashed border-border rounded-lg p-6 text-center">
-                        {formData.input_image_2_url && imageMode2 === 'upload' && !selectedBucketImage2 ? (
-                          <div className="space-y-4">
-                            <img
-                              src={formData.input_image_2_url}
-                              alt="Reference 2"
-                              className="max-w-full h-32 mx-auto object-cover rounded-lg"
-                            />
+                  <Label>Reference Images Set 2 * (Select multiple for batch generation)</Label>
+                  
+                  {loadingBucketImages ? (
+                    <div className="text-center py-8">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
+                      <p className="text-muted-foreground">
+                        Loading bucket images...
+                      </p>
+                    </div>
+                  ) : bucketImages.length === 0 ? (
+                    <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
+                      <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-muted-foreground mb-2">
+                        No images in bucket
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Upload images to your bucket first to select them here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Selected Images Display */}
+                      {selectedBucketImages2.length > 0 && (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-medium">
+                              Selected Images ({selectedBucketImages2.length})
+                            </h4>
                             <Button
+                              type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() =>
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  input_image_2_url: '',
-                                }))
-                              }
+                              onClick={() => clearAllBucketSelections(2)}
                             >
-                              <X className="h-4 w-4 mr-2" />
-                              Remove
+                              Clear All
                             </Button>
                           </div>
-                        ) : (
-                          <div className="space-y-4">
-                            <Upload className="h-12 w-12 mx-auto text-muted-foreground" />
-                            <div>
-                              <p className="text-sm font-medium">Upload second image</p>
-                              <p className="text-xs text-muted-foreground">JPG, PNG, GIF, or WebP</p>
-                            </div>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                const input = document.createElement('input');
-                                input.type = 'file';
-                                input.accept = 'image/*';
-                                input.onchange = (e) => {
-                                  const file = (e.target as HTMLInputElement).files?.[0];
-                                  if (file) handleImageUpload(file, 2);
-                                };
-                                input.click();
-                              }}
-                            >
-                              <Upload className="h-4 w-4 mr-2" />
-                              Choose File
-                            </Button>
-                          </div>
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="bucket" className="space-y-4">
-                      {loadingBucketImages ? (
-                        <div className="text-center py-8">
-                          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-                          <p className="text-muted-foreground">Loading bucket images...</p>
-                        </div>
-                      ) : bucketImages.length === 0 ? (
-                        <div className="text-center py-8 border-2 border-dashed border-border rounded-lg">
-                          <Folder className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                          <p className="text-muted-foreground mb-2">No images in bucket</p>
-                          <p className="text-sm text-muted-foreground">
-                            Upload images to your bucket first to select them here.
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {selectedBucketImage2 && (
-                            <div className="space-y-4">
-                              <div className="relative">
-                                <img
-                                  src={selectedBucketImage2.image_url}
-                                  alt={selectedBucketImage2.filename}
-                                  className="w-full max-h-32 object-contain rounded-lg border"
-                                />
-                                <Button
-                                  type="button"
-                                  variant="destructive"
-                                  size="sm"
-                                  className="absolute top-2 right-2"
-                                  onClick={() => removeBucketSelection(2)}
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                <ImageIcon className="h-4 w-4" />
-                                <span>{selectedBucketImage2.filename}</span>
-                                <span>({formatFileSize(selectedBucketImage2.file_size)})</span>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {!selectedBucketImage2 && (
-                            <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto">
-                              {bucketImages.map((image) => (
-                                <div 
-                                  key={image.id}
-                                  className="relative group cursor-pointer"
-                                  onClick={() => handleBucketImageSelect(image, 2)}
-                                >
-                                  <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-border/50 hover:border-primary transition-colors">
-                                    <img
-                                      src={image.image_url}
-                                      alt={image.filename}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Check className="h-8 w-8 text-white" />
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground mt-1 truncate">
-                                    {image.filename}
-                                  </p>
+                          <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+                            {selectedBucketImages2.map((image) => (
+                              <div
+                                key={image.id}
+                                className="relative group"
+                              >
+                                <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
+                                    onClick={() => removeBucketSelection(image, 2)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </Button>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
-                    </TabsContent>
-                  </Tabs>
+
+                      {/* Available Images Grid */}
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">
+                          Available Images (click to select/deselect)
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                          {bucketImages.map((image) => {
+                            const isSelected = selectedBucketImages2.some(img => img.id === image.id);
+                            return (
+                              <div
+                                key={image.id}
+                                className={`relative group cursor-pointer ${
+                                  isSelected ? 'ring-2 ring-primary' : ''
+                                }`}
+                                onClick={() => handleBucketImageSelect(image, 2)}
+                              >
+                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                  isSelected 
+                                    ? 'border-primary border-2' 
+                                    : 'border-border/50 hover:border-primary'
+                                }`}>
+                                  <img
+                                    src={image.image_url}
+                                    alt={image.filename}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                    isSelected 
+                                      ? 'bg-primary/20' 
+                                      : 'bg-black/0 group-hover:bg-black/20'
+                                  }`}>
+                                    <div className={`transition-opacity ${
+                                      isSelected 
+                                        ? 'opacity-100' 
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}>
+                                      {isSelected ? (
+                                        <div className="bg-primary rounded-full p-1">
+                                          <Check className="h-6 w-6 text-white" />
+                                        </div>
+                                      ) : (
+                                        <Check className="h-8 w-8 text-white" />
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1 truncate">
+                                  {image.filename}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

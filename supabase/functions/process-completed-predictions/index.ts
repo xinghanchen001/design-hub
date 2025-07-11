@@ -174,7 +174,7 @@ Deno.serve(async (req: Request) => {
               );
 
               // Update as failed
-              await supabase
+              const { error: failedUpdateError } = await supabase
                 .from('print_on_shirt_images')
                 .update({
                   status: 'failed',
@@ -182,6 +182,10 @@ Deno.serve(async (req: Request) => {
                   completed_at: new Date().toISOString(),
                 })
                 .eq('id', image.id);
+
+              if (failedUpdateError) {
+                console.error(`❌ Error updating failed image record:`, failedUpdateError);
+              }
 
               failedCount++;
             }
@@ -191,7 +195,7 @@ Deno.serve(async (req: Request) => {
             );
 
             // Update as failed
-            await supabase
+            const { error: noOutputUpdateError } = await supabase
               .from('print_on_shirt_images')
               .update({
                 status: 'failed',
@@ -199,6 +203,10 @@ Deno.serve(async (req: Request) => {
                 completed_at: new Date().toISOString(),
               })
               .eq('id', image.id);
+
+            if (noOutputUpdateError) {
+              console.error(`❌ Error updating no-output image record:`, noOutputUpdateError);
+            }
 
             failedCount++;
           }
@@ -235,7 +243,7 @@ Deno.serve(async (req: Request) => {
         console.error(`❌ Error processing image ${image.id}:`, error);
 
         // Update as failed
-        await supabase
+        const { error: processingUpdateError } = await supabase
           .from('print_on_shirt_images')
           .update({
             status: 'failed',
@@ -243,6 +251,10 @@ Deno.serve(async (req: Request) => {
             completed_at: new Date().toISOString(),
           })
           .eq('id', image.id);
+
+        if (processingUpdateError) {
+          console.error(`❌ Error updating processing-error image record:`, processingUpdateError);
+        }
 
         failedCount++;
       }
