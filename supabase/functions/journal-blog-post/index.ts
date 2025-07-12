@@ -60,9 +60,10 @@ Deno.serve(async (req: Request) => {
     // Handle GET request (fetch journal posts)
     if (req.method === 'GET') {
       const { data: posts, error: fetchError } = await supabaseClient
-        .from('journal_blog_posts')
+        .from('generated_content')
         .select('*')
         .eq('user_id', user.id)
+        .eq('content_type', 'text')
         .order('created_at', { ascending: false });
 
       if (fetchError) {
@@ -76,7 +77,20 @@ Deno.serve(async (req: Request) => {
         );
       }
 
-      return new Response(JSON.stringify({ data: posts }), {
+      // Transform data to match the expected format
+      const transformedPosts =
+        posts?.map((post: any) => ({
+          id: post.id,
+          title: post.metadata?.title || 'Untitled',
+          system_prompt: post.metadata?.system_prompt || '',
+          user_prompt: post.prompt || '',
+          ai_response: post.content_url || post.metadata?.ai_response || '',
+          created_at: post.created_at,
+          updated_at: post.updated_at,
+          user_id: post.user_id,
+        })) || [];
+
+      return new Response(JSON.stringify({ data: transformedPosts }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -211,18 +225,34 @@ Deno.serve(async (req: Request) => {
 
             console.log('Fallback AI response received, saving to database...');
 
-            // Save to database
+            // Save to database - using generated_content table
             const { data: newPost, error: insertError } = await supabaseClient
-              .from('journal_blog_posts')
+              .from('generated_content')
               .insert([
                 {
-                  title,
-                  system_prompt: systemPrompt,
-                  user_prompt: userPrompt,
-                  ai_response:
+                  user_id: user.id,
+                  project_id: null, // Journal posts might not be tied to a specific project
+                  schedule_id: null,
+                  project_type: 'journal',
+                  content_type: 'text',
+                  prompt: userPrompt,
+                  content_url:
                     aiResponse +
                     '\n\n[Note: Generated using fallback model as dedicated endpoint is not running]',
-                  user_id: user.id,
+                  generation_status: 'completed',
+                  metadata: {
+                    title: title,
+                    system_prompt: systemPrompt,
+                    ai_response:
+                      aiResponse +
+                      '\n\n[Note: Generated using fallback model as dedicated endpoint is not running]',
+                    model_used: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+                    generation_settings: {
+                      temperature: 0.7,
+                      top_p: 0.9,
+                      max_tokens: 2048,
+                    },
+                  },
                 },
               ])
               .select()
@@ -242,8 +272,22 @@ Deno.serve(async (req: Request) => {
               );
             }
 
+            // Transform to expected format
+            const transformedPost = {
+              id: newPost.id,
+              title: title,
+              system_prompt: systemPrompt,
+              user_prompt: userPrompt,
+              ai_response:
+                aiResponse +
+                '\n\n[Note: Generated using fallback model as dedicated endpoint is not running]',
+              created_at: newPost.created_at,
+              updated_at: newPost.updated_at,
+              user_id: newPost.user_id,
+            };
+
             console.log('Journal post saved successfully');
-            return new Response(JSON.stringify({ data: newPost }), {
+            return new Response(JSON.stringify({ data: transformedPost }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
           }
@@ -265,16 +309,31 @@ Deno.serve(async (req: Request) => {
 
         console.log('AI response received, saving to database...');
 
-        // Save to database
+        // Save to database - using generated_content table
         const { data: newPost, error: insertError } = await supabaseClient
-          .from('journal_blog_posts')
+          .from('generated_content')
           .insert([
             {
-              title,
-              system_prompt: systemPrompt,
-              user_prompt: userPrompt,
-              ai_response: aiResponse,
               user_id: user.id,
+              project_id: null, // Journal posts might not be tied to a specific project
+              schedule_id: null,
+              project_type: 'journal',
+              content_type: 'text',
+              prompt: userPrompt,
+              content_url: aiResponse,
+              generation_status: 'completed',
+              metadata: {
+                title: title,
+                system_prompt: systemPrompt,
+                ai_response: aiResponse,
+                model_used:
+                  'hanchenxing_8f2b/DeepSeek-R1-Distill-Llama-70B-german-journalist-v1-23f09862-73eb6e3b',
+                generation_settings: {
+                  temperature: 0.7,
+                  top_p: 0.9,
+                  max_tokens: 2048,
+                },
+              },
             },
           ])
           .select()
@@ -291,8 +350,20 @@ Deno.serve(async (req: Request) => {
           );
         }
 
+        // Transform to expected format
+        const transformedPost = {
+          id: newPost.id,
+          title: title,
+          system_prompt: systemPrompt,
+          user_prompt: userPrompt,
+          ai_response: aiResponse,
+          created_at: newPost.created_at,
+          updated_at: newPost.updated_at,
+          user_id: newPost.user_id,
+        };
+
         console.log('Journal post saved successfully');
-        return new Response(JSON.stringify({ data: newPost }), {
+        return new Response(JSON.stringify({ data: transformedPost }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (aiError) {

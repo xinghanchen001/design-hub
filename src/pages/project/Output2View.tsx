@@ -30,40 +30,16 @@ import {
   X,
   Loader2,
 } from 'lucide-react';
+import type { Tables } from '@/integrations/supabase/types';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  prompt: string | null;
-  reference_image_url: string | null;
-  schedule_enabled: boolean;
-  schedule_duration_hours: number;
-  max_images_to_generate: number;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
+type Project = Tables<'projects'>;
+type Schedule = Tables<'schedules'>;
+type GeneratedContent = Tables<'generated_content'>;
 
-interface PrintOnShirtImage {
-  id: string;
-  schedule_id: string;
-  image_url: string;
-  prompt: string;
-  status: string;
-  prediction_id: string;
-  generated_at: string;
-  created_at: string;
-  completed_at: string;
-  input_image_1_url: string;
-  input_image_2_url: string;
-  model_used: string;
-  generation_time_seconds: number;
-  error_message: string | null;
-  schedule_name?: string;
+interface GeneratedContentWithSchedule extends GeneratedContent {
+  schedules?: {
+    name: string;
+  };
 }
 
 const Output2View = () => {
@@ -74,7 +50,7 @@ const Output2View = () => {
   const { user } = useAuth();
 
   const [isLoading, setIsLoading] = useState(false);
-  const [images, setImages] = useState<PrintOnShirtImage[]>([]);
+  const [images, setImages] = useState<GeneratedContentWithSchedule[]>([]);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
   const [isDeletingImages, setIsDeletingImages] = useState(false);
@@ -84,31 +60,26 @@ const Output2View = () => {
     try {
       if (!user?.id) return;
 
-      // Fetch print-on-shirt images with schedule info
+      // Fetch generated content for print-on-shirt projects with schedule info
       const { data: printImages, error } = await supabase
-        .from('print_on_shirt_images')
+        .from('generated_content')
         .select(
           `
           *,
-          print_on_shirt_schedules(name)
+          schedules (
+            name
+          )
         `
         )
         .eq('user_id', user.id)
+        .eq('content_type', 'design') // Print-on-shirt content type
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching print-on-shirt images:', error);
         toast.error('Failed to fetch print-on-shirt images');
       } else {
-        // Transform the data to include schedule name
-        const transformedImages =
-          printImages?.map((img) => ({
-            ...img,
-            schedule_name:
-              img.print_on_shirt_schedules?.name || 'Unknown Schedule',
-          })) || [];
-
-        setImages(transformedImages);
+        setImages(printImages || []);
       }
     } catch (error) {
       console.error('Error fetching print-on-shirt images:', error);
@@ -186,15 +157,7 @@ const Output2View = () => {
     }
   };
 
-  const downloadImage = async (image: PrintOnShirtImage) => {
-    if (!image.image_url) {
-      toast.error('No image URL available');
-      return;
-    }
-    await handleDownload(image.image_url, `print-on-shirt-${image.id}.png`);
-  };
-
-  const deleteImage = async (image: PrintOnShirtImage) => {
+  const deleteImage = async (image: GeneratedContentWithSchedule) => {
     if (
       !window.confirm(
         'Are you sure you want to delete this image? This action cannot be undone.'
@@ -206,7 +169,7 @@ const Output2View = () => {
     try {
       // Delete from database
       const { error } = await supabase
-        .from('print_on_shirt_images')
+        .from('generated_content')
         .delete()
         .eq('id', image.id);
 
@@ -237,7 +200,7 @@ const Output2View = () => {
 
       if (imageIds.length > 0) {
         const { error } = await supabase
-          .from('print_on_shirt_images')
+          .from('generated_content')
           .delete()
           .in('id', imageIds);
 
@@ -260,10 +223,18 @@ const Output2View = () => {
     }
   };
 
-  const viewImageDetails = (image: PrintOnShirtImage) => {
-    if (image.image_url) {
-      window.open(image.image_url, '_blank');
+  const viewImageDetails = (image: GeneratedContentWithSchedule) => {
+    if (image.content_url) {
+      window.open(image.content_url, '_blank');
     }
+  };
+
+  const downloadImage = async (image: GeneratedContentWithSchedule) => {
+    if (!image.content_url) {
+      toast.error('No image URL available');
+      return;
+    }
+    await handleDownload(image.content_url, `print-on-shirt-${image.id}.png`);
   };
 
   return (
@@ -377,19 +348,28 @@ const Output2View = () => {
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-green-600">
-                {images.filter((img) => img.status === 'completed').length}
+                {
+                  images.filter((img) => img.generation_status === 'completed')
+                    .length
+                }
               </div>
               <div className="text-sm text-muted-foreground">Completed</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-red-600">
-                {images.filter((img) => img.status === 'failed').length}
+                {
+                  images.filter((img) => img.generation_status === 'failed')
+                    .length
+                }
               </div>
               <div className="text-sm text-muted-foreground">Failed</div>
             </div>
             <div className="text-center">
               <div className="text-2xl font-bold text-yellow-600">
-                {images.filter((img) => img.status === 'processing').length}
+                {
+                  images.filter((img) => img.generation_status === 'processing')
+                    .length
+                }
               </div>
               <div className="text-sm text-muted-foreground">Processing</div>
             </div>
@@ -400,133 +380,145 @@ const Output2View = () => {
       {/* Images Grid */}
       {images.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {images.map((image) => (
-            <Card
-              key={image.id}
-              className={`shadow-card border-border/50 overflow-hidden transition-all duration-200 ${
-                isSelecting
-                  ? selectedImages.has(image.id)
-                    ? 'ring-2 ring-primary bg-primary/5'
-                    : 'hover:ring-2 hover:ring-muted-foreground cursor-pointer'
-                  : ''
-              }`}
-              onClick={
-                isSelecting ? () => toggleImageSelection(image.id) : undefined
-              }
-            >
-              <div className="aspect-square bg-white relative">
-                {image.image_url && image.status === 'completed' ? (
-                  <img
-                    src={image.image_url}
-                    alt={image.prompt}
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-muted">
-                    <Shirt className="h-12 w-12 text-muted-foreground" />
-                  </div>
-                )}
+          {images.map((image) => {
+            const metadata = (image.metadata as any) || {};
+            const generationSettings = (image.generation_settings as any) || {};
 
-                {/* Selection checkbox */}
-                {isSelecting && (
-                  <div className="absolute top-2 left-2">
-                    <Checkbox
-                      checked={selectedImages.has(image.id)}
-                      onCheckedChange={() => toggleImageSelection(image.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-background/80 border-background/80"
+            return (
+              <Card
+                key={image.id}
+                className={`shadow-card border-border/50 overflow-hidden transition-all duration-200 ${
+                  isSelecting
+                    ? selectedImages.has(image.id)
+                      ? 'ring-2 ring-primary bg-primary/5'
+                      : 'hover:ring-2 hover:ring-muted-foreground cursor-pointer'
+                    : ''
+                }`}
+                onClick={
+                  isSelecting ? () => toggleImageSelection(image.id) : undefined
+                }
+              >
+                <div className="aspect-square bg-white relative">
+                  {image.content_url &&
+                  image.generation_status === 'completed' ? (
+                    <img
+                      src={image.content_url}
+                      alt={metadata.prompt || image.prompt || ''}
+                      className="w-full h-full object-contain"
                     />
-                  </div>
-                )}
-
-                {/* More actions dropdown */}
-                {!isSelecting && (
-                  <div className="absolute top-2 right-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0 text-black hover:bg-background/80 data-[state=open]:bg-background/80"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-48">
-                        <DropdownMenuItem
-                          onClick={() => viewImageDetails(image)}
-                          disabled={
-                            !image.image_url || image.status !== 'completed'
-                          }
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View Full Size
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => downloadImage(image)}
-                          disabled={
-                            !image.image_url || image.status !== 'completed'
-                          }
-                        >
-                          <Download className="h-4 w-4 mr-2" />
-                          Download Image
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => deleteImage(image)}
-                          className="text-destructive focus:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Delete Image
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                )}
-              </div>
-
-              <CardContent className="p-4">
-                <div className="space-y-2">
-                  {/* Schedule name and status */}
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Shirt className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {image.schedule_name || 'Unknown Schedule'}
-                      </span>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-muted">
+                      <Shirt className="h-12 w-12 text-muted-foreground" />
                     </div>
-                    <Badge
-                      variant={
-                        image.status === 'completed' ? 'outline' : 'secondary'
-                      }
-                      className="text-xs px-1 py-0"
-                    >
-                      {image.status === 'completed'
-                        ? 'Multi-Image'
-                        : image.status}
-                    </Badge>
-                  </div>
+                  )}
 
-                  {/* Prompt */}
-                  <p
-                    className="text-sm text-foreground line-clamp-1"
-                    title={image.prompt}
-                    style={{ cursor: 'default', position: 'relative' }}
-                  >
-                    {image.prompt}
-                  </p>
+                  {/* Selection checkbox */}
+                  {isSelecting && (
+                    <div className="absolute top-2 left-2">
+                      <Checkbox
+                        checked={selectedImages.has(image.id)}
+                        onCheckedChange={() => toggleImageSelection(image.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="bg-background/80 border-background/80"
+                      />
+                    </div>
+                  )}
 
-                  {/* Date and generation time */}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{formatDateShort(image.created_at)}</span>
-                    {image.generation_time_seconds && (
-                      <span>{image.generation_time_seconds.toFixed(1)}s</span>
-                    )}
-                  </div>
+                  {/* More actions dropdown */}
+                  {!isSelecting && (
+                    <div className="absolute top-2 right-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-black hover:bg-background/80 data-[state=open]:bg-background/80"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem
+                            onClick={() => viewImageDetails(image)}
+                            disabled={
+                              !image.content_url ||
+                              image.generation_status !== 'completed'
+                            }
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Full Size
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => downloadImage(image)}
+                            disabled={
+                              !image.content_url ||
+                              image.generation_status !== 'completed'
+                            }
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            Download Image
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => deleteImage(image)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete Image
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          ))}
+
+                <CardContent className="p-4">
+                  <div className="space-y-2">
+                    {/* Schedule name and status */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Shirt className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {image.schedules?.name || 'Unknown Schedule'}
+                        </span>
+                      </div>
+                      <Badge
+                        variant={
+                          image.generation_status === 'completed'
+                            ? 'outline'
+                            : 'secondary'
+                        }
+                        className="text-xs px-1 py-0"
+                      >
+                        {image.generation_status === 'completed'
+                          ? 'Multi-Image'
+                          : image.generation_status}
+                      </Badge>
+                    </div>
+
+                    {/* Prompt */}
+                    <p
+                      className="text-sm text-foreground line-clamp-1"
+                      title={metadata.prompt || image.prompt || ''}
+                      style={{ cursor: 'default', position: 'relative' }}
+                    >
+                      {metadata.prompt || image.prompt || 'No prompt'}
+                    </p>
+
+                    {/* Date and generation time */}
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{formatDateShort(image.created_at || '')}</span>
+                      {metadata.generation_time_seconds && (
+                        <span>
+                          {metadata.generation_time_seconds.toFixed(1)}s
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12">

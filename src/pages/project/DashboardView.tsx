@@ -21,44 +21,27 @@ import {
   Images,
   Activity,
 } from 'lucide-react';
+import type { Tables } from '@/integrations/supabase/types';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  prompt: string | null;
-  reference_image_url: string | null;
-  schedule_enabled: boolean;
-  schedule_duration_hours: number;
-  max_images_to_generate: number;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  status: string;
-  created_at: string;
-  updated_at: string;
+type Project = Tables<'projects'>;
+type Schedule = Tables<'schedules'>;
+type GenerationJob = Tables<'generation_jobs'>;
+type GeneratedContent = Tables<'generated_content'>;
+
+interface ProjectSettings {
+  prompt?: string;
+  reference_image_url?: string;
+  max_images_to_generate?: number;
+  schedule_duration_hours?: number;
+  generation_interval_minutes?: number;
 }
 
-interface GenerationJob {
-  id: string;
-  status: string;
-  scheduled_at: string;
-  started_at: string;
-  completed_at: string;
-  error_message: string;
-  images_generated: number;
+interface ScheduleWithJobs extends Schedule {
+  generation_jobs?: GenerationJob[];
 }
 
-interface GeneratedImage {
-  id: string;
-  image_url: string;
-  prompt: string;
-  generated_at: string;
-  project_id: string;
-  project_name?: string | null;
-  model_used?: string;
-  generation_time_seconds?: number;
-  storage_path?: string | null;
+interface GeneratedContentWithProject extends GeneratedContent {
+  schedules?: { name: string; project_type: string };
 }
 
 const DashboardView = () => {
@@ -70,8 +53,8 @@ const DashboardView = () => {
   const navigate = useNavigate();
 
   const [jobs, setJobs] = useState<GenerationJob[]>([]);
-  const [images, setImages] = useState<GeneratedImage[]>([]);
-  const [userProjects, setUserProjects] = useState<Project[]>([]);
+  const [images, setImages] = useState<GeneratedContentWithProject[]>([]);
+  const [userSchedules, setUserSchedules] = useState<ScheduleWithJobs[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -81,50 +64,50 @@ const DashboardView = () => {
 
   const loadDashboardData = async () => {
     try {
-      // Fetch ALL user projects for schedules view
-      const { data: allProjectsData, error: allProjectsError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
+      // Fetch ALL user schedules for schedules view
+      const { data: allSchedulesData, error: allSchedulesError } =
+        await supabase
+          .from('schedules')
+          .select(
+            `
+          *,
+          generation_jobs (*)
+        `
+          )
+          .eq('user_id', user?.id)
+          .order('created_at', { ascending: false });
 
-      if (allProjectsError) throw allProjectsError;
-      setUserProjects(allProjectsData || []);
+      if (allSchedulesError) throw allSchedulesError;
+      setUserSchedules(allSchedulesData || []);
 
-      // Fetch generation jobs for this project
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('generation_jobs')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      // Get schedules for this project to fetch their jobs
+      const projectSchedules =
+        allSchedulesData?.filter((s) => s.project_id === project.id) || [];
+      const allJobs = projectSchedules.flatMap((s) => s.generation_jobs || []);
+      setJobs(allJobs.slice(0, 10)); // Limit to 10 most recent
 
-      if (jobsError) throw jobsError;
-      setJobs(jobsData || []);
-
-      // Fetch ALL generated images for this user
-      const { data: imagesData, error: imagesError } = await supabase
-        .from('generated_images')
+      // Fetch ALL generated content for this user
+      const { data: contentData, error: contentError } = await supabase
+        .from('generated_content')
         .select(
           `
           *,
-          projects:project_id (
-            name
+          schedules:schedule_id (
+            name,
+            project_type
           )
         `
         )
         .eq('user_id', user?.id)
-        .order('generated_at', { ascending: false })
+        .eq('content_type', 'image')
+        .eq('generation_status', 'completed')
+        .not('content_url', 'is', null)
+        .order('created_at', { ascending: false })
         .limit(50);
 
-      if (imagesError) throw imagesError;
+      if (contentError) throw contentError;
 
-      const transformedImages = (imagesData || []).map((image) => ({
-        ...image,
-        project_name: image.projects?.name || null,
-      }));
-
-      setImages(transformedImages || []);
+      setImages(contentData || []);
     } catch (error: any) {
       toast.error(error.message || 'Failed to load dashboard data');
     } finally {
@@ -136,15 +119,33 @@ const DashboardView = () => {
     if (!project) return;
 
     try {
+      // Get the first schedule for this project
+      const { data: schedules, error: fetchError } = await supabase
+        .from('schedules')
+        .select('*')
+        .eq('project_id', project.id)
+        .limit(1);
+
+      if (fetchError) throw fetchError;
+
+      if (!schedules || schedules.length === 0) {
+        toast.info('No schedule found for this project');
+        navigate('/create-project');
+        return;
+      }
+
+      const schedule = schedules[0];
+      const newStatus = schedule.status === 'active' ? 'paused' : 'active';
+
       const { error } = await supabase
-        .from('projects')
-        .update({ schedule_enabled: !project.schedule_enabled })
-        .eq('id', project.id);
+        .from('schedules')
+        .update({ status: newStatus })
+        .eq('id', schedule.id);
 
       if (error) throw error;
 
       toast.success(
-        project.schedule_enabled ? 'Schedule paused' : 'Schedule activated'
+        newStatus === 'paused' ? 'Schedule paused' : 'Schedule activated'
       );
 
       await fetchProjectData();
@@ -155,11 +156,9 @@ const DashboardView = () => {
   };
 
   const stats = {
-    activeSchedules: userProjects.filter(
-      (p) => p.schedule_enabled && p.is_active
-    ).length,
+    activeSchedules: userSchedules.filter((s) => s.status === 'active').length,
     imagesGenerated: images.length,
-    queueStatus: jobs.filter((job) => job.status === 'pending').length,
+    queueStatus: jobs.filter((job) => job.status === 'queued').length,
     successRate:
       jobs.length > 0
         ? (jobs.filter((job) => job.status === 'completed').length /
@@ -167,6 +166,8 @@ const DashboardView = () => {
           100
         : 100,
   };
+
+  const projectSettings = (project.settings as ProjectSettings) || {};
 
   if (loading) {
     return (
@@ -262,38 +263,47 @@ const DashboardView = () => {
           <CardContent>
             {stats.activeSchedules > 0 ? (
               <div className="space-y-3">
-                {userProjects
-                  .filter((p) => p.schedule_enabled && p.is_active)
+                {userSchedules
+                  .filter((s) => s.status === 'active')
                   .slice(0, 3)
-                  .map((activeProject) => (
-                    <div
-                      key={activeProject.id}
-                      className={`flex items-center justify-between p-4 border border-border rounded-lg ${
-                        activeProject.id === project.id ? 'bg-muted/30' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-full bg-green-100">
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{activeProject.name}</p>
-                            {activeProject.id === project.id && (
-                              <Badge variant="outline" className="text-xs">
-                                Current
-                              </Badge>
-                            )}
+                  .map((activeSchedule) => {
+                    const scheduleConfig =
+                      (activeSchedule.schedule_config as any) || {};
+                    const isCurrentProject =
+                      activeSchedule.project_id === project.id;
+
+                    return (
+                      <div
+                        key={activeSchedule.id}
+                        className={`flex items-center justify-between p-4 border border-border rounded-lg ${
+                          isCurrentProject ? 'bg-muted/30' : ''
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 rounded-full bg-green-100">
+                            <CheckCircle className="h-4 w-4 text-green-600" />
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            Every {activeProject.generation_interval_minutes}m
-                            for {activeProject.schedule_duration_hours}h
-                          </p>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">
+                                {activeSchedule.name}
+                              </p>
+                              {isCurrentProject && (
+                                <Badge variant="outline" className="text-xs">
+                                  Current
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              Every {scheduleConfig.interval_minutes || 60}m for{' '}
+                              {scheduleConfig.duration_hours || 8}h
+                            </p>
+                          </div>
                         </div>
+                        <Badge variant="secondary">Active</Badge>
                       </div>
-                      <Badge variant="secondary">Active</Badge>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                 {stats.activeSchedules > 3 && (
                   <div className="text-center pt-2">
@@ -328,7 +338,10 @@ const DashboardView = () => {
           <CardContent className="space-y-3">
             <Button
               onClick={() => {
-                if (project.schedule_enabled) {
+                const hasSchedule = userSchedules.some(
+                  (s) => s.project_id === project.id
+                );
+                if (hasSchedule) {
                   toggleSchedule();
                 } else {
                   navigate('/create-project');
@@ -338,7 +351,7 @@ const DashboardView = () => {
               variant="outline"
             >
               <Plus className="mr-2 h-4 w-4" />
-              {project.schedule_enabled
+              {userSchedules.some((s) => s.project_id === project.id)
                 ? 'Toggle Schedule'
                 : 'Create New Schedule'}
             </Button>
@@ -372,7 +385,7 @@ const DashboardView = () => {
                       className={`p-1 rounded-full ${
                         job.status === 'completed'
                           ? 'bg-green-100'
-                          : job.status === 'running'
+                          : job.status === 'processing'
                           ? 'bg-blue-100'
                           : job.status === 'failed'
                           ? 'bg-red-100'
@@ -383,7 +396,7 @@ const DashboardView = () => {
                         className={`h-3 w-3 ${
                           job.status === 'completed'
                             ? 'text-green-600'
-                            : job.status === 'running'
+                            : job.status === 'processing'
                             ? 'text-blue-600'
                             : job.status === 'failed'
                             ? 'text-red-600'
@@ -394,7 +407,7 @@ const DashboardView = () => {
                     <div className="flex-1">
                       <p className="text-sm font-medium">{job.status}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(job.scheduled_at).toLocaleString()}
+                        {new Date(job.created_at || '').toLocaleString()}
                       </p>
                     </div>
                   </div>

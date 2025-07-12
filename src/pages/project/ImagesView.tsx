@@ -46,14 +46,23 @@ interface Project {
 
 interface GeneratedImage {
   id: string;
-  image_url: string;
-  prompt: string;
-  generated_at: string;
-  project_id: string;
+  content_url: string;
+  metadata: any;
+  created_at: string;
+  schedule_id: string;
+  schedule_name?: string | null;
+  project_type?: string | null;
+  generation_status: string;
+  content_type: string;
+  // Legacy compatibility fields for UI
+  image_url?: string;
+  generated_at?: string;
+  project_id?: string;
   project_name?: string | null;
+  storage_path?: string | null;
+  prompt?: string;
   model_used?: string;
   generation_time_seconds?: number;
-  storage_path?: string | null;
   image_type?: 'regular' | 'print-on-shirt';
 }
 
@@ -77,27 +86,48 @@ const ImagesView = () => {
 
   const loadImages = async () => {
     try {
-      // Fetch only regular generated images (Project 1)
-      const { data: regularImages, error: regularError } = await supabase
-        .from('generated_images')
+      // Fetch generated images from the new generated_content table
+      const { data: contentData, error: contentError } = await supabase
+        .from('generated_content')
         .select(
           `
           *,
-          projects:project_id (
-            name
+          schedules:schedule_id (
+            name,
+            project_type
           )
         `
         )
         .eq('user_id', user?.id)
-        .order('generated_at', { ascending: false })
+        .eq('content_type', 'image')
+        .eq('generation_status', 'completed')
+        .not('content_url', 'is', null)
+        .order('created_at', { ascending: false })
         .limit(50);
 
-      if (regularError) throw regularError;
+      if (contentError) throw contentError;
 
-      // Transform regular images
-      const transformedImages = (regularImages || []).map((image) => ({
-        ...image,
-        project_name: image.projects?.name || null,
+      // Transform the data to match the expected interface
+      const transformedImages = (contentData || []).map((content) => ({
+        id: content.id,
+        content_url: content.content_url,
+        metadata: content.metadata,
+        created_at: content.created_at,
+        schedule_id: content.schedule_id,
+        schedule_name: content.schedules?.name || null,
+        project_type: content.schedules?.project_type || null,
+        generation_status: content.generation_status,
+        content_type: content.content_type,
+        // Legacy fields for compatibility
+        image_url: content.content_url,
+        generated_at: content.created_at,
+        project_id: content.schedule_id,
+        project_name: content.schedules?.name || null,
+        storage_path: content.metadata?.storage_path || null,
+        prompt: content.metadata?.prompt || '',
+        model_used: content.metadata?.model_used || undefined,
+        generation_time_seconds:
+          content.metadata?.generation_time_seconds || undefined,
         image_type: 'regular' as const,
       }));
 
@@ -159,7 +189,7 @@ const ImagesView = () => {
         .filter((img) => img.storage_path)
         .map(async (img) => {
           const { error } = await supabase.storage
-            .from('ai-generated-images')
+            .from('generated-images')
             .remove([img.storage_path!]);
 
           if (error) {
@@ -177,7 +207,7 @@ const ImagesView = () => {
 
       if (imageIds.length > 0) {
         const { error } = await supabase
-          .from('generated_images')
+          .from('generated_content')
           .delete()
           .in('id', imageIds);
 
@@ -205,7 +235,7 @@ const ImagesView = () => {
 
   const downloadImage = async (image: GeneratedImage) => {
     try {
-      const response = await fetch(image.image_url);
+      const response = await fetch(image.image_url || image.content_url);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -234,7 +264,7 @@ const ImagesView = () => {
       // Delete from storage first (if storage_path exists)
       if (image.storage_path) {
         const { error } = await supabase.storage
-          .from('ai-generated-images')
+          .from('generated-images')
           .remove([image.storage_path]);
 
         if (error) {
@@ -247,7 +277,7 @@ const ImagesView = () => {
 
       // Delete from database
       const { error } = await supabase
-        .from('generated_images')
+        .from('generated_content')
         .delete()
         .eq('id', image.id);
 
@@ -264,7 +294,7 @@ const ImagesView = () => {
 
   const viewImageDetails = (image: GeneratedImage) => {
     // Open image in new tab for full view
-    window.open(image.image_url, '_blank');
+    window.open(image.image_url || image.content_url, '_blank');
   };
 
   if (loading) {
@@ -406,7 +436,7 @@ const ImagesView = () => {
             >
               <div className="aspect-square bg-white relative">
                 <img
-                  src={image.image_url}
+                  src={image.image_url || image.content_url}
                   alt={image.prompt}
                   className="w-full h-full object-contain"
                 />

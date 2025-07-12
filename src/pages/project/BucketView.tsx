@@ -123,7 +123,7 @@ const BucketView = () => {
         .select('*')
         .eq('project_id', project.id)
         .eq('user_id', user?.id)
-        .ilike('storage_path', `%/bucket/${project.id}/${projectType}/%`)
+        .eq('project_type', projectType) // Use project_type field instead of ilike
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -158,10 +158,10 @@ const BucketView = () => {
           const fileName = `bucket_${timestamp}_${index}.${fileExt}`;
           const storagePath = `${user?.id}/bucket/${project?.id}/${projectType}/${fileName}`;
 
-          // Upload to Supabase storage
+          // Upload to Supabase storage - use the correct bucket name
           const { data: uploadData, error: uploadError } =
             await supabase.storage
-              .from('user-images')
+              .from('user-bucket-images') // Changed from 'user-images' to 'user-bucket-images'
               .upload(storagePath, file, {
                 cacheControl: '3600',
                 upsert: false,
@@ -171,7 +171,7 @@ const BucketView = () => {
 
           // Get public URL
           const { data: urlData } = supabase.storage
-            .from('user-images')
+            .from('user-bucket-images') // Changed from 'user-images' to 'user-bucket-images'
             .getPublicUrl(storagePath);
 
           // Insert into database
@@ -180,6 +180,7 @@ const BucketView = () => {
             .insert({
               project_id: project?.id,
               user_id: user?.id,
+              project_type: projectType, // Add project_type field
               filename: file.name,
               storage_path: storagePath,
               image_url: urlData.publicUrl,
@@ -231,8 +232,9 @@ const BucketView = () => {
       const imagesToDelete = images.filter((img) => selectedImages.has(img.id));
 
       // Delete from storage
-      const storageDeletePromises = imagesToDelete.map((img) =>
-        supabase.storage.from('user-images').remove([img.storage_path])
+      const storageDeletePromises = imagesToDelete.map(
+        (img) =>
+          supabase.storage.from('user-bucket-images').remove([img.storage_path]) // Changed from 'user-images' to 'user-bucket-images'
       );
 
       await Promise.all(storageDeletePromises);
@@ -277,7 +279,7 @@ const BucketView = () => {
   const downloadImage = async (image: BucketImage) => {
     try {
       const { data, error } = await supabase.storage
-        .from('user-images')
+        .from('user-bucket-images') // Changed from 'user-images' to 'user-bucket-images'
         .download(image.storage_path);
 
       if (error) throw error;

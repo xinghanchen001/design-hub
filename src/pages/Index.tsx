@@ -75,23 +75,43 @@ const Index = () => {
 
   const fetchRecentActivities = async () => {
     try {
+      // First check if the user exists
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('generation_jobs')
         .select(
           `
           *,
-          projects!inner(name, user_id)
+          schedules!inner(
+            name,
+            project_id,
+            projects!inner(
+              name,
+              user_id
+            )
+          )
         `
         )
-        .eq('projects.user_id', user.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching activities:', error);
+        // Don't throw, just log and return empty activities
+        setActivities([]);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        setActivities([]);
+        return;
+      }
 
       const formattedActivities: Activity[] = data.map((job: any) => {
         const timeAgo = getTimeAgo(new Date(job.created_at));
-        const projectName = job.projects.name;
+        const projectName = job.schedules?.projects?.name || 'Unknown Project';
 
         switch (job.status) {
           case 'completed':
@@ -110,14 +130,14 @@ const Index = () => {
               time: timeAgo,
               color: 'bg-destructive',
             };
-          case 'running':
+          case 'processing':
             return {
               type: 'info',
               message: `Generating image for "${projectName}"`,
               time: timeAgo,
               color: 'bg-brand-secondary',
             };
-          case 'pending':
+          case 'queued':
             return {
               type: 'info',
               message: `Scheduled generation added to queue for "${projectName}"`,
@@ -137,6 +157,7 @@ const Index = () => {
       setActivities(formattedActivities);
     } catch (error) {
       console.error('Error fetching activities:', error);
+      setActivities([]);
     }
   };
 

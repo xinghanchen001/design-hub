@@ -1,137 +1,228 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type',
 };
 
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    console.log("=== Schedule Processor Function Called ===")
-    
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-    
+    console.log('=== Schedule Processor Function Called ===');
+
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error('Supabase configuration is missing')
+      throw new Error('Supabase configuration is missing');
     }
 
     // Initialize Supabase client with service role key
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    
-    // First, create new scheduled jobs for active projects
-    console.log("Creating scheduled jobs for active projects...")
-    const { error: createJobsError } = await supabase.rpc('create_scheduled_jobs')
-    
-    if (createJobsError) {
-      console.error("Error creating scheduled jobs:", createJobsError)
-    } else {
-      console.log("Scheduled jobs created successfully")
-    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Get all pending jobs
-    console.log("Fetching pending jobs...")
-    const { data: pendingJobs, error: fetchError } = await supabase
-      .from('generation_jobs')
+    // Get all active schedules that need processing
+    console.log('Fetching active schedules that need processing...');
+    const { data: schedules, error: schedulesError } = await supabase
+      .from('schedules')
       .select('*')
-      .eq('status', 'pending')
-      .order('scheduled_at', { ascending: true })
-      .limit(5) // Process max 5 jobs at a time
+      .eq('status', 'active')
+      .lte('next_run', new Date().toISOString())
+      .limit(5); // Process max 5 schedules at a time
 
-    if (fetchError) {
-      throw new Error(`Failed to fetch pending jobs: ${fetchError.message}`)
+    if (schedulesError) {
+      console.error('Error fetching schedules:', schedulesError);
+      throw new Error(`Failed to fetch schedules: ${schedulesError.message}`);
     }
 
-    console.log(`Found ${pendingJobs?.length || 0} pending jobs`)
+    console.log(
+      `Found ${schedules?.length || 0} schedules ready for processing`
+    );
 
-    if (!pendingJobs || pendingJobs.length === 0) {
-      return new Response(JSON.stringify({ 
-        message: "No pending jobs to process",
-        processed: 0
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      })
+    if (!schedules || schedules.length === 0) {
+      return new Response(
+        JSON.stringify({
+          message: 'No schedules ready for processing',
+          processed: 0,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
     }
 
-    // Process each pending job
-    let processedCount = 0
-    const results = []
+    // Process each schedule
+    let processedCount = 0;
+    const results = [];
 
-    for (const job of pendingJobs) {
+    for (const schedule of schedules) {
       try {
-        console.log(`Processing job ${job.id} for project ${job.project_id}`)
-        
-        // Call the generate-image function
-        const { data: generateResult, error: generateError } = await supabase.functions.invoke('generate-image', {
-          body: {
-            project_id: job.project_id,
-            job_id: job.id,
-            manual_generation: false
-          }
-        })
+        console.log(
+          `Processing schedule ${schedule.id} (${schedule.name}) for project type: ${schedule.project_type}`
+        );
+
+        // Create a generation job for this schedule
+        const { data: newJob, error: jobError } = await supabase
+          .from('generation_jobs')
+          .insert([
+            {
+              schedule_id: schedule.id,
+              user_id: schedule.user_id,
+              project_type: schedule.project_type,
+              job_type: 'single',
+              status: 'queued',
+              created_at: new Date().toISOString(),
+            },
+          ])
+          .select()
+          .single();
+
+        if (jobError) {
+          console.error(
+            `Error creating job for schedule ${schedule.id}:`,
+            jobError
+          );
+          results.push({
+            schedule_id: schedule.id,
+            success: false,
+            error: jobError.message,
+          });
+          continue;
+        }
+
+        // Call the appropriate function based on project type
+        let generateResult;
+        let generateError;
+
+        if (schedule.project_type === 'image-generation') {
+          // Call the generate-image function
+          const result = await supabase.functions.invoke('generate-image', {
+            body: {
+              schedule_id: schedule.id,
+              job_id: newJob.id,
+              manual_generation: false,
+            },
+          });
+          generateResult = result.data;
+          generateError = result.error;
+        } else if (schedule.project_type === 'print-on-shirt') {
+          // Call the print-on-shirt processor function
+          const result = await supabase.functions.invoke(
+            'print-on-shirt-processor-correct',
+            {
+              body: {
+                schedule_id: schedule.id,
+                job_id: newJob.id,
+                manual_generation: false,
+              },
+            }
+          );
+          generateResult = result.data;
+          generateError = result.error;
+        } else if (schedule.project_type === 'journal') {
+          // For journal, we'll handle it differently since it doesn't generate images
+          console.log(
+            `Journal processing not applicable for schedule ${schedule.id}`
+          );
+          generateResult = {
+            success: false,
+            error: 'Journal processing not applicable in schedule processor',
+          };
+        } else {
+          console.log(`Unknown project type: ${schedule.project_type}`);
+          generateResult = {
+            success: false,
+            error: `Unknown project type: ${schedule.project_type}`,
+          };
+        }
 
         if (generateError) {
-          console.error(`Error generating image for job ${job.id}:`, generateError)
+          console.error(
+            `Error generating content for schedule ${schedule.id}:`,
+            generateError
+          );
           results.push({
-            job_id: job.id,
+            schedule_id: schedule.id,
             success: false,
-            error: generateError.message
-          })
+            error: generateError.message,
+          });
         } else if (generateResult?.success) {
-          console.log(`Successfully processed job ${job.id}`)
-          processedCount++
+          console.log(`Successfully processed schedule ${schedule.id}`);
+
+          // Update schedule's next run time
+          const scheduleConfig = (schedule.schedule_config as any) || {};
+          const intervalMinutes = scheduleConfig.interval_minutes || 60;
+          const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
+
+          await supabase
+            .from('schedules')
+            .update({
+              last_run: new Date().toISOString(),
+              next_run: nextRun.toISOString(),
+            })
+            .eq('id', schedule.id);
+
+          processedCount++;
           results.push({
-            job_id: job.id,
+            schedule_id: schedule.id,
             success: true,
-            image_url: generateResult.image?.image_url
-          })
+            images_generated: generateResult.images_generated || 0,
+          });
         } else {
-          console.error(`Generation failed for job ${job.id}:`, generateResult?.error)
+          console.error(
+            `Generation failed for schedule ${schedule.id}:`,
+            generateResult?.error
+          );
           results.push({
-            job_id: job.id,
+            schedule_id: schedule.id,
             success: false,
-            error: generateResult?.error || 'Unknown error'
-          })
+            error: generateResult?.error || 'Unknown error',
+          });
         }
       } catch (error) {
-        console.error(`Exception processing job ${job.id}:`, error)
+        console.error(`Exception processing schedule ${schedule.id}:`, error);
         results.push({
-          job_id: job.id,
+          schedule_id: schedule.id,
           success: false,
-          error: error.message
-        })
+          error: error.message,
+        });
       }
     }
 
-    console.log(`=== Scheduler completed: ${processedCount}/${pendingJobs.length} jobs processed successfully ===`)
+    console.log(
+      `=== Scheduler completed: ${processedCount}/${schedules.length} schedules processed successfully ===`
+    );
 
-    return new Response(JSON.stringify({ 
-      message: `Processed ${processedCount} jobs successfully`,
-      processed: processedCount,
-      total_jobs: pendingJobs.length,
-      results: results
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    })
-
+    return new Response(
+      JSON.stringify({
+        message: `Processed ${processedCount} schedules successfully`,
+        processed: processedCount,
+        total_schedules: schedules.length,
+        results: results,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      }
+    );
   } catch (error) {
-    console.error("Error in schedule-processor function:", error)
+    console.error('Error in schedule-processor function:', error);
 
-    return new Response(JSON.stringify({ 
-      error: error.message,
-      success: false 
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
-    })
+    return new Response(
+      JSON.stringify({
+        error: error.message,
+        success: false,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      }
+    );
   }
-})
+});

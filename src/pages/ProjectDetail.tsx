@@ -100,14 +100,23 @@ interface GenerationJob {
 
 interface GeneratedImage {
   id: string;
-  image_url: string;
-  prompt: string;
-  generated_at: string;
-  project_id: string;
-  project_name?: string | null; // Project name, null if project deleted
+  content_url: string;
+  metadata: any;
+  created_at: string;
+  schedule_id: string;
+  schedule_name?: string | null;
+  project_type?: string | null;
+  generation_status: string;
+  content_type: string;
+  // Legacy compatibility fields
+  image_url?: string;
+  generated_at?: string;
+  project_id?: string;
+  project_name?: string | null;
+  storage_path?: string | null;
+  prompt?: string;
   model_used?: string;
   generation_time_seconds?: number;
-  storage_path?: string | null;
 }
 
 interface JournalBlogPost {
@@ -185,26 +194,47 @@ const ProjectDetail = () => {
       setJobs(jobsData || []);
 
       // Fetch ALL generated images for this user (not just current project)
-      const { data: imagesData, error: imagesError } = await supabase
-        .from('generated_images')
+      const { data: contentData, error: contentError } = await supabase
+        .from('generated_content')
         .select(
           `
           *,
-          projects:project_id (
-            name
+          schedules:schedule_id (
+            name,
+            project_type
           )
         `
         )
         .eq('user_id', user?.id)
-        .order('generated_at', { ascending: false })
+        .eq('content_type', 'image')
+        .eq('generation_status', 'completed')
+        .not('content_url', 'is', null)
+        .order('created_at', { ascending: false })
         .limit(50);
 
-      if (imagesError) throw imagesError;
+      if (contentError) throw contentError;
 
-      // Transform the data to include project names
-      const transformedImages = (imagesData || []).map((image) => ({
-        ...image,
-        project_name: image.projects?.name || null, // null if project deleted
+      // Transform the data to include project names and legacy compatibility
+      const transformedImages = (contentData || []).map((content) => ({
+        id: content.id,
+        content_url: content.content_url,
+        metadata: content.metadata,
+        created_at: content.created_at,
+        schedule_id: content.schedule_id,
+        schedule_name: content.schedules?.name || null,
+        project_type: content.schedules?.project_type || null,
+        generation_status: content.generation_status,
+        content_type: content.content_type,
+        // Legacy fields for compatibility
+        image_url: content.content_url,
+        generated_at: content.created_at,
+        project_id: content.schedule_id,
+        project_name: content.schedules?.name || null,
+        storage_path: content.metadata?.storage_path || null,
+        prompt: content.metadata?.prompt || '',
+        model_used: content.metadata?.model_used || undefined,
+        generation_time_seconds:
+          content.metadata?.generation_time_seconds || undefined,
       }));
 
       setImages(transformedImages || []);
@@ -388,7 +418,7 @@ const ProjectDetail = () => {
         .filter((img) => img.storage_path)
         .map(async (img) => {
           const { error } = await supabase.storage
-            .from('ai-generated-images')
+            .from('generated-images')
             .remove([img.storage_path!]);
 
           if (error) {
@@ -403,7 +433,7 @@ const ProjectDetail = () => {
 
       // Delete from database
       const { error } = await supabase
-        .from('generated_images')
+        .from('generated_content')
         .delete()
         .in('id', Array.from(selectedImages));
 
@@ -890,7 +920,7 @@ const ProjectDetail = () => {
             >
               <div className="aspect-square bg-muted relative">
                 <img
-                  src={image.image_url}
+                  src={image.image_url || image.content_url}
                   alt={image.prompt}
                   className="w-full h-full object-cover"
                 />

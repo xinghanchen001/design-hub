@@ -41,6 +41,10 @@ const CreateProject = () => {
     max_images_to_generate: 100,
     generation_interval_minutes: 60,
     reference_image_url: '',
+    project_type: 'image-generation' as
+      | 'image-generation'
+      | 'print-on-shirt'
+      | 'journal',
   });
 
   const { user } = useAuth();
@@ -121,24 +125,68 @@ const CreateProject = () => {
         }
       }
 
-      const { data, error } = await supabase
+      // First, create the project with the new schema
+      const projectData = {
+        name: formData.name,
+        description: formData.description,
+        project_type: formData.project_type,
+        user_id: user.id,
+        status: 'active' as const,
+        settings: {
+          prompt: formData.prompt,
+          reference_image_url: referenceImageUrl,
+          max_images_to_generate: formData.max_images_to_generate,
+          schedule_duration_hours: formData.schedule_duration_hours,
+          generation_interval_minutes: formData.generation_interval_minutes,
+        },
+      };
+
+      const { data: project, error: projectError } = await supabase
         .from('projects')
-        .insert([
-          {
-            ...formData,
-            reference_image_url: referenceImageUrl,
-            user_id: user.id,
-            status: 'created',
-          },
-        ])
+        .insert([projectData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (projectError) throw projectError;
+
+      // If schedule is enabled, create a schedule entry
+      if (formData.schedule_enabled && project) {
+        const scheduleData = {
+          project_id: project.id,
+          user_id: user.id,
+          project_type: formData.project_type,
+          name: `${formData.name} Schedule`,
+          description: `Auto-generated schedule for ${formData.name}`,
+          prompt: formData.prompt,
+          schedule_config: {
+            enabled: true,
+            duration_hours: formData.schedule_duration_hours,
+            interval_minutes: formData.generation_interval_minutes,
+          },
+          generation_settings: {
+            max_images: formData.max_images_to_generate,
+            reference_image_url: referenceImageUrl,
+          },
+          bucket_settings: {},
+          status: 'active' as const,
+          next_run: new Date().toISOString(), // Set next_run to now so schedule starts immediately
+        };
+
+        const { error: scheduleError } = await supabase
+          .from('schedules')
+          .insert([scheduleData]);
+
+        if (scheduleError) {
+          console.error('Schedule creation error:', scheduleError);
+          // Don't fail the whole operation if schedule creation fails
+          toast.warning('Project created but schedule creation failed');
+        }
+      }
 
       toast.success('AI Agent created successfully!');
-      navigate(`/project/${data.id}`);
+      navigate(`/project/${project.id}`);
     } catch (error: any) {
+      console.error('Project creation error:', error);
       toast.error(error.message || 'Failed to create project');
     } finally {
       setLoading(false);

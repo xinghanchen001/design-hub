@@ -40,22 +40,16 @@ import {
   Folder,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import type { Tables } from '@/integrations/supabase/types';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  prompt: string | null;
-  reference_image_url: string | null;
-  schedule_enabled: boolean;
-  schedule_duration_hours: number;
-  max_images_to_generate: number;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  status: string;
-  created_at: string;
-  updated_at: string;
+type Project = Tables<'projects'>;
+
+interface ProjectSettings {
+  prompt?: string;
+  reference_image_url?: string;
+  max_images_to_generate?: number;
+  schedule_duration_hours?: number;
+  generation_interval_minutes?: number;
 }
 
 const ProjectLayout = () => {
@@ -87,6 +81,14 @@ const ProjectLayout = () => {
         .single();
 
       if (projectError) throw projectError;
+
+      // Transform the project data to include settings from JSONB
+      const projectWithSettings = {
+        ...projectData,
+        // Extract settings from JSONB if needed for backward compatibility
+        ...((projectData.settings as ProjectSettings) || {}),
+      };
+
       setProject(projectData);
     } catch (error: any) {
       toast.error(error.message || 'Failed to load project data');
@@ -147,7 +149,11 @@ const ProjectLayout = () => {
           <h2 className="font-semibold text-foreground truncate">
             {project.name}
           </h2>
-          <p className="text-xs text-muted-foreground">Runway Gen-4</p>
+          <p className="text-xs text-muted-foreground">
+            {project.project_type === 'image-generation' && 'Image Generation'}
+            {project.project_type === 'print-on-shirt' && 'Print on Shirt'}
+            {project.project_type === 'journal' && 'Journal'}
+          </p>
         </div>
 
         {/* Dashboard - Standalone */}

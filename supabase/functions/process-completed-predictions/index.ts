@@ -31,36 +31,39 @@ Deno.serve(async (req: Request) => {
 
     console.log('🔍 Checking for completed predictions...');
 
-    // Get all processing images with prediction IDs and related schedule info
-    const { data: processingImages, error: fetchError } = await supabase
-      .from('print_on_shirt_images')
+    // Get all processing content with prediction IDs and related schedule info
+    const { data: processingContent, error: fetchError } = await supabase
+      .from('generated_content')
       .select(
         `
         *,
-        print_on_shirt_schedules (
+        schedules (
           id,
           project_id,
           name
         )
       `
       )
-      .eq('status', 'processing')
-      .not('prediction_id', 'is', null);
+      .eq('generation_status', 'processing')
+      .eq('content_type', 'design')
+      .not('metadata->prediction_id', 'is', null);
 
     if (fetchError) {
-      console.error('❌ Error fetching processing images:', fetchError);
+      console.error('❌ Error fetching processing content:', fetchError);
       throw fetchError;
     }
 
-    if (!processingImages || processingImages.length === 0) {
-      console.log('ℹ️ No processing images found');
+    if (!processingContent || processingContent.length === 0) {
+      console.log('ℹ️ No processing content found');
       return new Response(
-        JSON.stringify({ message: 'No processing images found' }),
+        JSON.stringify({ message: 'No processing content found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`📋 Found ${processingImages.length} processing image(s)`);
+    console.log(
+      `📋 Found ${processingContent.length} processing content item(s)`
+    );
 
     const replicateApiKey = Deno.env.get('REPLICATE_API_KEY');
     if (!replicateApiKey) {
@@ -70,13 +73,21 @@ Deno.serve(async (req: Request) => {
     let completedCount = 0;
     let failedCount = 0;
 
-    for (const image of processingImages) {
+    for (const content of processingContent) {
       try {
-        console.log(`🔍 Checking prediction: ${image.prediction_id}`);
+        const metadata = (content.metadata as any) || {};
+        const predictionId = metadata.prediction_id;
+
+        if (!predictionId) {
+          console.log(`⚠️ No prediction ID found for content ${content.id}`);
+          continue;
+        }
+
+        console.log(`🔍 Checking prediction: ${predictionId}`);
 
         // Check prediction status from Replicate
         const predictionResponse = await fetch(
-          `https://api.replicate.com/v1/predictions/${image.prediction_id}`,
+          `https://api.replicate.com/v1/predictions/${predictionId}`,
           {
             headers: {
               Authorization: `Token ${replicateApiKey}`,
@@ -86,20 +97,18 @@ Deno.serve(async (req: Request) => {
 
         if (!predictionResponse.ok) {
           console.error(
-            `❌ Failed to get prediction status for ${image.prediction_id}`
+            `❌ Failed to get prediction status for ${predictionId}`
           );
           continue;
         }
 
         const prediction = await predictionResponse.json();
         console.log(
-          `📊 Prediction ${image.prediction_id} status: ${prediction.status}`
+          `📊 Prediction ${predictionId} status: ${prediction.status}`
         );
 
         if (prediction.status === 'succeeded') {
-          console.log(
-            `✅ Prediction ${image.prediction_id} completed successfully`
-          );
+          console.log(`✅ Prediction ${predictionId} completed successfully`);
 
           // Download and store the generated image
           const imageUrl = prediction.output;
@@ -115,15 +124,17 @@ Deno.serve(async (req: Request) => {
 
               const imageBuffer = await imageResponse.arrayBuffer();
 
-              // Get project_id from schedule or use a default
+              // Get project_id from schedule or use content's project_id
               const projectId =
-                image.print_on_shirt_schedules?.project_id || 'default-project';
+                content.schedules?.project_id ||
+                content.project_id ||
+                'default-project';
 
               // Generate consistent storage path using utility
               const fileName = generateStoragePath({
-                userId: image.user_id,
+                userId: content.user_id,
                 projectId: projectId,
-                projectType: 'project2',
+                projectType: 'print-on-shirt',
                 timestamp: Date.now(),
               });
 
@@ -149,24 +160,30 @@ Deno.serve(async (req: Request) => {
               console.log(`🔗 Public URL: ${publicUrl}`);
 
               // Update database record
+              const updatedMetadata = {
+                ...metadata,
+                replicate_output_url: imageUrl,
+                generation_time_seconds: metadata.generation_time_seconds || 0,
+                prediction_id: predictionId,
+              };
+
               const { error: updateError } = await supabase
-                .from('print_on_shirt_images')
+                .from('generated_content')
                 .update({
-                  status: 'completed',
-                  image_url: publicUrl,
+                  generation_status: 'completed',
+                  content_url: publicUrl,
                   storage_path: fileName,
-                  replicate_output_url: imageUrl,
-                  completed_at: new Date().toISOString(),
+                  metadata: updatedMetadata,
                 })
-                .eq('id', image.id);
+                .eq('id', content.id);
 
               if (updateError) {
-                console.error(`❌ Error updating image record:`, updateError);
+                console.error(`❌ Error updating content record:`, updateError);
                 throw updateError;
               }
 
               completedCount++;
-              console.log(`✅ Successfully processed image: ${image.id}`);
+              console.log(`✅ Successfully processed content: ${content.id}`);
             } catch (downloadError) {
               console.error(
                 `❌ Error downloading/storing image:`,
@@ -175,60 +192,70 @@ Deno.serve(async (req: Request) => {
 
               // Update as failed
               const { error: failedUpdateError } = await supabase
-                .from('print_on_shirt_images')
+                .from('generated_content')
                 .update({
-                  status: 'failed',
-                  error_message: `Download/storage failed: ${downloadError.message}`,
-                  completed_at: new Date().toISOString(),
+                  generation_status: 'failed',
+                  metadata: {
+                    ...((content.metadata as any) || {}),
+                    error_message: `Download/storage failed: ${downloadError.message}`,
+                  },
                 })
-                .eq('id', image.id);
+                .eq('id', content.id);
 
               if (failedUpdateError) {
-                console.error(`❌ Error updating failed image record:`, failedUpdateError);
+                console.error(
+                  `❌ Error updating failed content record:`,
+                  failedUpdateError
+                );
               }
 
               failedCount++;
             }
           } else {
-            console.error(
-              `❌ No output URL for prediction ${image.prediction_id}`
-            );
+            console.error(`❌ No output URL for prediction ${predictionId}`);
 
             // Update as failed
             const { error: noOutputUpdateError } = await supabase
-              .from('print_on_shirt_images')
+              .from('generated_content')
               .update({
-                status: 'failed',
-                error_message: 'No output URL from Replicate',
-                completed_at: new Date().toISOString(),
+                generation_status: 'failed',
+                metadata: {
+                  ...((content.metadata as any) || {}),
+                  error_message: 'No output URL from Replicate',
+                },
               })
-              .eq('id', image.id);
+              .eq('id', content.id);
 
             if (noOutputUpdateError) {
-              console.error(`❌ Error updating no-output image record:`, noOutputUpdateError);
+              console.error(
+                `❌ Error updating no-output content record:`,
+                noOutputUpdateError
+              );
             }
 
             failedCount++;
           }
         } else if (prediction.status === 'failed') {
           console.error(
-            `❌ Prediction ${image.prediction_id} failed:`,
+            `❌ Prediction ${predictionId} failed:`,
             prediction.error
           );
 
           // Update as failed
           const { error: updateError } = await supabase
-            .from('print_on_shirt_images')
+            .from('generated_content')
             .update({
-              status: 'failed',
-              error_message: prediction.error?.message || 'Generation failed',
-              completed_at: new Date().toISOString(),
+              generation_status: 'failed',
+              metadata: {
+                ...((content.metadata as any) || {}),
+                error_message: prediction.error?.message || 'Generation failed',
+              },
             })
-            .eq('id', image.id);
+            .eq('id', content.id);
 
           if (updateError) {
             console.error(
-              `❌ Error updating failed image record:`,
+              `❌ Error updating failed content record:`,
               updateError
             );
           }
@@ -236,24 +263,29 @@ Deno.serve(async (req: Request) => {
           failedCount++;
         } else {
           console.log(
-            `⏳ Prediction ${image.prediction_id} still ${prediction.status}`
+            `⏳ Prediction ${predictionId} still ${prediction.status}`
           );
         }
       } catch (error) {
-        console.error(`❌ Error processing image ${image.id}:`, error);
+        console.error(`❌ Error processing content ${content.id}:`, error);
 
         // Update as failed
         const { error: processingUpdateError } = await supabase
-          .from('print_on_shirt_images')
+          .from('generated_content')
           .update({
-            status: 'failed',
-            error_message: `Processing error: ${error.message}`,
-            completed_at: new Date().toISOString(),
+            generation_status: 'failed',
+            metadata: {
+              ...((content.metadata as any) || {}),
+              error_message: `Processing error: ${error.message}`,
+            },
           })
-          .eq('id', image.id);
+          .eq('id', content.id);
 
         if (processingUpdateError) {
-          console.error(`❌ Error updating processing-error image record:`, processingUpdateError);
+          console.error(
+            `❌ Error updating processing-error content record:`,
+            processingUpdateError
+          );
         }
 
         failedCount++;
@@ -267,10 +299,10 @@ Deno.serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: `Processed ${processingImages.length} predictions`,
+        message: `Processed ${processingContent.length} predictions`,
         completed: completedCount,
         failed: failedCount,
-        total_checked: processingImages.length,
+        total_checked: processingContent.length,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

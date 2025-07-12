@@ -7,23 +7,13 @@ interface PrintOnShirtSchedule {
   project_id?: string;
   name: string;
   prompt: string;
-  input_image_1_url: string;
-  input_image_2_url: string;
-  aspect_ratio: string;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  max_images_to_generate: number;
-  schedule_enabled: boolean;
-  is_active: boolean;
+  project_type: string;
+  status: string;
+  schedule_config: any;
+  generation_settings: any;
+  bucket_settings: any;
   created_at: string;
-  schedule_duration_hours: number;
-  // Add bucket support
-  use_bucket_images?: boolean;
-  bucket_image_1_id?: string;
-  bucket_image_2_id?: string;
-  // Multi-select support
-  bucket_image_1_ids?: string[];
-  bucket_image_2_ids?: string[];
+  next_run: string;
 }
 
 interface BucketImage {
@@ -66,10 +56,11 @@ Deno.serve(async (req: Request) => {
 
     // Get all active print-on-shirt schedules that need processing
     const { data: schedules, error: schedulesError } = await supabase
-      .from('print_on_shirt_schedules')
+      .from('schedules')
       .select('*')
-      .eq('schedule_enabled', true)
-      .eq('is_active', true);
+      .eq('project_type', 'print-on-shirt')
+      .eq('status', 'active')
+      .lte('next_run', new Date().toISOString());
 
     if (schedulesError) {
       console.error('❌ Error fetching schedules:', schedulesError);
@@ -96,26 +87,9 @@ Deno.serve(async (req: Request) => {
     for (const schedule of schedules as PrintOnShirtSchedule[]) {
       console.log(`🔍 Processing schedule: ${schedule.name} (${schedule.id})`);
 
-      // Check if it's time to generate based on interval
-      if (schedule.last_generation_at) {
-        const lastGeneration = new Date(schedule.last_generation_at);
-        const now = new Date();
-        const minutesSinceLastGeneration =
-          (now.getTime() - lastGeneration.getTime()) / (1000 * 60);
-
-        console.log(
-          `⏱️ Minutes since last generation: ${minutesSinceLastGeneration.toFixed(
-            1
-          )}`
-        );
-
-        if (minutesSinceLastGeneration < schedule.generation_interval_minutes) {
-          console.log(
-            `⏸️ Skipping ${schedule.name} - not time yet (need ${schedule.generation_interval_minutes} min interval)`
-          );
-          continue;
-        }
-      }
+      const scheduleConfig = (schedule.schedule_config as any) || {};
+      const generationSettings = (schedule.generation_settings as any) || {};
+      const bucketSettings = (schedule.bucket_settings as any) || {};
 
       // Check if we've reached the duration limit
       const scheduleStart = new Date(schedule.created_at);
@@ -123,17 +97,17 @@ Deno.serve(async (req: Request) => {
       const hoursSinceStart =
         (now.getTime() - scheduleStart.getTime()) / (1000 * 60 * 60);
 
-      if (hoursSinceStart >= schedule.schedule_duration_hours) {
+      const durationHours = scheduleConfig.duration_hours || 24;
+      if (hoursSinceStart >= durationHours) {
         console.log(
-          `⏹️ Schedule ${schedule.name} has reached duration limit (${schedule.schedule_duration_hours} hours)`
+          `⏹️ Schedule ${schedule.name} has reached duration limit (${durationHours} hours)`
         );
 
         // Disable the schedule
         await supabase
-          .from('print_on_shirt_schedules')
+          .from('schedules')
           .update({
-            schedule_enabled: false,
-            is_active: false,
+            status: 'paused',
           })
           .eq('id', schedule.id);
 
@@ -141,25 +115,23 @@ Deno.serve(async (req: Request) => {
       }
 
       // Count existing images for this schedule
-      const { count: existingImageCount } = await supabase
-        .from('print_on_shirt_images')
+      const { count: existingContentCount } = await supabase
+        .from('generated_content')
         .select('*', { count: 'exact', head: true })
-        .eq('schedule_id', schedule.id);
+        .eq('schedule_id', schedule.id)
+        .eq('content_type', 'design');
 
-      if (
-        existingImageCount &&
-        existingImageCount >= schedule.max_images_to_generate
-      ) {
+      const maxImages = generationSettings.max_images || 10;
+      if (existingContentCount && existingContentCount >= maxImages) {
         console.log(
-          `📸 Schedule ${schedule.name} has reached max images limit (${schedule.max_images_to_generate})`
+          `📸 Schedule ${schedule.name} has reached max images limit (${maxImages})`
         );
 
         // Disable the schedule
         await supabase
-          .from('print_on_shirt_schedules')
+          .from('schedules')
           .update({
-            schedule_enabled: false,
-            is_active: false,
+            status: 'paused',
           })
           .eq('id', schedule.id);
 
@@ -168,43 +140,61 @@ Deno.serve(async (req: Request) => {
 
       try {
         // Check if this schedule uses bucket images for batch generation
-        if (schedule.use_bucket_images && schedule.project_id) {
-          console.log(`🗂️ Bucket mode: Processing ${schedule.name} with bucket images`);
-          
+        if (bucketSettings.use_bucket_images && schedule.project_id) {
+          console.log(
+            `🗂️ Bucket mode: Processing ${schedule.name} with bucket images`
+          );
+
           // Initialize combinations array
           let combinations = [];
-          
+
           // Check if we have multi-select arrays (new format)
-          if (schedule.bucket_image_1_ids && schedule.bucket_image_2_ids && 
-              schedule.bucket_image_1_ids.length > 0 && schedule.bucket_image_2_ids.length > 0) {
-            
-            console.log(`🎯 Multi-select mode: ${schedule.bucket_image_1_ids.length} images in set 1, ${schedule.bucket_image_2_ids.length} images in set 2`);
-            
+          if (
+            bucketSettings.bucket_image_1_ids &&
+            bucketSettings.bucket_image_2_ids &&
+            bucketSettings.bucket_image_1_ids.length > 0 &&
+            bucketSettings.bucket_image_2_ids.length > 0
+          ) {
+            console.log(
+              `🎯 Multi-select mode: ${bucketSettings.bucket_image_1_ids.length} images in set 1, ${bucketSettings.bucket_image_2_ids.length} images in set 2`
+            );
+
             // Fetch selected bucket images for set 1
             const { data: bucketImages1, error: bucketError1 } = await supabase
               .from('project_bucket_images')
               .select('*')
-              .in('id', schedule.bucket_image_1_ids)
+              .in('id', bucketSettings.bucket_image_1_ids)
               .eq('project_id', schedule.project_id);
 
-            // Fetch selected bucket images for set 2  
+            // Fetch selected bucket images for set 2
             const { data: bucketImages2, error: bucketError2 } = await supabase
               .from('project_bucket_images')
               .select('*')
-              .in('id', schedule.bucket_image_2_ids)
+              .in('id', bucketSettings.bucket_image_2_ids)
               .eq('project_id', schedule.project_id);
 
             if (bucketError1 || bucketError2) {
-              console.error('Error fetching selected bucket images:', bucketError1 || bucketError2);
-              throw new Error(`Failed to fetch selected bucket images: ${(bucketError1 || bucketError2)?.message}`);
+              console.error(
+                'Error fetching selected bucket images:',
+                bucketError1 || bucketError2
+              );
+              throw new Error(
+                `Failed to fetch selected bucket images: ${
+                  (bucketError1 || bucketError2)?.message
+                }`
+              );
             }
 
             if (!bucketImages1?.length || !bucketImages2?.length) {
               console.log('⚠️ Some selected bucket images not found');
-              throw new Error('Some selected bucket images not found. Please check your selection.');
+              throw new Error(
+                'Some selected bucket images not found. Please check your selection.'
+              );
             }
 
-            console.log(`📸 Found ${bucketImages1.length} images in set 1, ${bucketImages2.length} images in set 2`);
+            console.log(
+              `📸 Found ${bucketImages1.length} images in set 1, ${bucketImages2.length} images in set 2`
+            );
 
             // Generate combinations from selected sets: Set 1 × Set 2
             for (const image1 of bucketImages1) {
@@ -212,42 +202,51 @@ Deno.serve(async (req: Request) => {
                 combinations.push({
                   image1,
                   image2,
-                  combo_name: `${image1.filename} × ${image2.filename}`
+                  combo_name: `${image1.filename} × ${image2.filename}`,
                 });
               }
             }
-            
           } else {
             // Fallback to old logic - fetch all bucket images for this project
-            console.log(`🔄 Fallback mode: Using all bucket images for combinations`);
-            
+            console.log(
+              `🔄 Fallback mode: Using all bucket images for combinations`
+            );
+
             const { data: bucketImages, error: bucketError } = await supabase
               .from('project_bucket_images')
               .select('*')
               .eq('project_id', schedule.project_id)
               .eq('user_id', schedule.user_id)
+              .eq('project_type', 'print-on-shirt')
               .order('created_at', { ascending: false });
 
             if (bucketError) {
               console.error('Error fetching bucket images:', bucketError);
-              throw new Error(`Failed to fetch bucket images: ${bucketError.message}`);
+              throw new Error(
+                `Failed to fetch bucket images: ${bucketError.message}`
+              );
             }
 
             if (!bucketImages || bucketImages.length === 0) {
               console.log('⚠️ No bucket images found for batch generation');
-              throw new Error('No bucket images found for batch generation. Please upload images to the bucket first.');
+              throw new Error(
+                'No bucket images found for batch generation. Please upload images to the bucket first.'
+              );
             }
 
-            console.log(`📸 Found ${bucketImages.length} bucket images for combinations`);
+            console.log(
+              `📸 Found ${bucketImages.length} bucket images for combinations`
+            );
 
             // Generate all possible combinations of Image 1 × Image 2
             for (const image1 of bucketImages) {
               for (const image2 of bucketImages) {
-                if (image1.id !== image2.id) { // Don't combine image with itself
+                if (image1.id !== image2.id) {
+                  // Don't combine image with itself
                   combinations.push({
                     image1,
                     image2,
-                    combo_name: `${image1.filename} × ${image2.filename}`
+                    combo_name: `${image1.filename} × ${image2.filename}`,
                   });
                 }
               }
@@ -257,17 +256,23 @@ Deno.serve(async (req: Request) => {
           console.log(`🔀 Generated ${combinations.length} image combinations`);
 
           // Limit the number of combinations to prevent overwhelming the system
-          const maxCombinations = Math.min(combinations.length, schedule.max_images_to_generate);
+          const maxCombinations = Math.min(combinations.length, maxImages);
           const selectedCombinations = combinations.slice(0, maxCombinations);
 
-          console.log(`🎯 Processing ${selectedCombinations.length} combinations`);
+          console.log(
+            `🎯 Processing ${selectedCombinations.length} combinations`
+          );
 
           // Create predictions for each combination
           for (let i = 0; i < selectedCombinations.length; i++) {
             const { image1, image2, combo_name } = selectedCombinations[i];
-            
+
             try {
-              console.log(`🎨 Generating combination ${i + 1}/${selectedCombinations.length}: ${combo_name}`);
+              console.log(
+                `🎨 Generating combination ${i + 1}/${
+                  selectedCombinations.length
+                }: ${combo_name}`
+              );
 
               const prediction = await fetch(
                 'https://api.replicate.com/v1/models/flux-kontext-apps/multi-image-kontext-max/predictions',
@@ -282,7 +287,7 @@ Deno.serve(async (req: Request) => {
                       prompt: schedule.prompt,
                       input_image_1: image1.image_url,
                       input_image_2: image2.image_url,
-                      aspect_ratio: schedule.aspect_ratio,
+                      aspect_ratio: generationSettings.aspect_ratio || '1:1',
                       output_format: 'png',
                       safety_tolerance: 1,
                     },
@@ -292,49 +297,71 @@ Deno.serve(async (req: Request) => {
 
               if (!prediction.ok) {
                 const errorText = await prediction.text();
-                console.error(`❌ Replicate API error for ${combo_name}:`, errorText);
+                console.error(
+                  `❌ Replicate API error for ${combo_name}:`,
+                  errorText
+                );
                 continue; // Skip this combination and continue with others
               }
 
               const predictionData = await prediction.json();
-              console.log(`✅ Prediction created for ${combo_name}:`, predictionData.id);
+              console.log(
+                `✅ Prediction created for ${combo_name}:`,
+                predictionData.id
+              );
 
               // Store the generation record in the database
               const { error: insertError } = await supabase
-                .from('print_on_shirt_images')
+                .from('generated_content')
                 .insert({
                   schedule_id: schedule.id,
                   user_id: schedule.user_id,
+                  project_id: schedule.project_id,
+                  content_type: 'design',
                   prompt: schedule.prompt,
-                  input_image_1_url: image1.image_url,
-                  input_image_2_url: image2.image_url,
-                  bucket_image_1_id: image1.id,
-                  bucket_image_2_id: image2.id,
-                  aspect_ratio: schedule.aspect_ratio,
-                  prediction_id: predictionData.id,
-                  status: 'processing',
-                  model_used: 'flux-kontext-apps/multi-image-kontext-max',
-                  output_format: 'png',
-                  safety_tolerance: 1,
-                  generated_at: now.toISOString(),
+                  generation_status: 'processing',
+                  metadata: {
+                    prediction_id: predictionData.id,
+                    input_image_1_url: image1.image_url,
+                    input_image_2_url: image2.image_url,
+                    bucket_image_1_id: image1.id,
+                    bucket_image_2_id: image2.id,
+                    aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                    output_format: 'png',
+                    safety_tolerance: 1,
+                    combo_name: combo_name,
+                    model_used: 'flux-kontext-apps/multi-image-kontext-max',
+                    generation_settings: generationSettings,
+                  },
                 });
 
               if (insertError) {
-                console.error(`❌ Error inserting image record for ${combo_name}:`, insertError);
+                console.error(
+                  `❌ Error inserting content record for ${combo_name}:`,
+                  insertError
+                );
                 continue; // Continue with other combinations
               }
 
-              console.log(`✅ Successfully queued generation for ${combo_name}`);
+              console.log(
+                `✅ Successfully queued generation for ${combo_name}`
+              );
             } catch (error) {
-              console.error(`❌ Error processing combination ${combo_name}:`, error);
+              console.error(
+                `❌ Error processing combination ${combo_name}:`,
+                error
+              );
               continue; // Continue with other combinations
             }
           }
 
-          // Update the schedule's last generation time
+          // Update the schedule's next run time
+          const intervalMinutes = scheduleConfig.interval_minutes || 60;
+          const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
+
           const { error: updateError } = await supabase
-            .from('print_on_shirt_schedules')
-            .update({ last_generation_at: now.toISOString() })
+            .from('schedules')
+            .update({ next_run: nextRun.toISOString() })
             .eq('id', schedule.id);
 
           if (updateError) {
@@ -342,13 +369,16 @@ Deno.serve(async (req: Request) => {
           }
 
           processedCount++;
-          console.log(`✅ Successfully processed ${schedule.name} with ${selectedCombinations.length} combinations`);
-
+          console.log(
+            `✅ Successfully processed ${schedule.name} with ${selectedCombinations.length} combinations`
+          );
         } else {
           // Original single image pair generation logic
-          console.log(`🎨 Single mode: Starting image generation for ${schedule.name}`);
-          console.log(`📸 Image 1: ${schedule.input_image_1_url}`);
-          console.log(`👕 Image 2: ${schedule.input_image_2_url}`);
+          console.log(
+            `🎨 Single mode: Starting image generation for ${schedule.name}`
+          );
+          console.log(`📸 Image 1: ${generationSettings.input_image_1_url}`);
+          console.log(`👕 Image 2: ${generationSettings.input_image_2_url}`);
           console.log(`💭 Prompt: ${schedule.prompt}`);
 
           const prediction = await fetch(
@@ -362,9 +392,9 @@ Deno.serve(async (req: Request) => {
               body: JSON.stringify({
                 input: {
                   prompt: schedule.prompt,
-                  input_image_1: schedule.input_image_1_url,
-                  input_image_2: schedule.input_image_2_url,
-                  aspect_ratio: schedule.aspect_ratio,
+                  input_image_1: generationSettings.input_image_1_url,
+                  input_image_2: generationSettings.input_image_2_url,
+                  aspect_ratio: generationSettings.aspect_ratio || '1:1',
                   output_format: 'png',
                   safety_tolerance: 1,
                 },
@@ -383,31 +413,38 @@ Deno.serve(async (req: Request) => {
 
           // Store the generation record in the database
           const { error: insertError } = await supabase
-            .from('print_on_shirt_images')
+            .from('generated_content')
             .insert({
               schedule_id: schedule.id,
               user_id: schedule.user_id,
+              project_id: schedule.project_id,
+              content_type: 'design',
               prompt: schedule.prompt,
-              input_image_1_url: schedule.input_image_1_url,
-              input_image_2_url: schedule.input_image_2_url,
-              aspect_ratio: schedule.aspect_ratio,
-              prediction_id: predictionData.id,
-              status: 'processing',
-              model_used: 'flux-kontext-apps/multi-image-kontext-max',
-              output_format: 'png',
-              safety_tolerance: 1,
-              generated_at: now.toISOString(),
+              generation_status: 'processing',
+              metadata: {
+                prediction_id: predictionData.id,
+                input_image_1_url: generationSettings.input_image_1_url,
+                input_image_2_url: generationSettings.input_image_2_url,
+                aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                output_format: 'png',
+                safety_tolerance: 1,
+                model_used: 'flux-kontext-apps/multi-image-kontext-max',
+                generation_settings: generationSettings,
+              },
             });
 
           if (insertError) {
-            console.error(`❌ Error inserting image record:`, insertError);
+            console.error(`❌ Error inserting content record:`, insertError);
             throw insertError;
           }
 
-          // Update the schedule's last generation time
+          // Update the schedule's next run time
+          const intervalMinutes = scheduleConfig.interval_minutes || 60;
+          const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
+
           const { error: updateError } = await supabase
-            .from('print_on_shirt_schedules')
-            .update({ last_generation_at: now.toISOString() })
+            .from('schedules')
+            .update({ next_run: nextRun.toISOString() })
             .eq('id', schedule.id);
 
           if (updateError) {
@@ -422,16 +459,19 @@ Deno.serve(async (req: Request) => {
         console.error(`❌ Error processing schedule ${schedule.name}:`, error);
 
         // Store the error in the database
-        await supabase.from('print_on_shirt_images').insert({
+        await supabase.from('generated_content').insert({
           schedule_id: schedule.id,
           user_id: schedule.user_id,
+          project_id: schedule.project_id,
+          content_type: 'design',
           prompt: schedule.prompt,
-          input_image_1_url: schedule.input_image_1_url,
-          input_image_2_url: schedule.input_image_2_url,
-          aspect_ratio: schedule.aspect_ratio,
-          status: 'failed',
-          error_message: error.message,
-          generated_at: now.toISOString(),
+          generation_status: 'failed',
+          metadata: {
+            error_message: error.message,
+            input_image_1_url: generationSettings.input_image_1_url,
+            input_image_2_url: generationSettings.input_image_2_url,
+            aspect_ratio: generationSettings.aspect_ratio || '1:1',
+          },
         });
 
         continue;
@@ -439,7 +479,7 @@ Deno.serve(async (req: Request) => {
     }
 
     console.log(
-      `🎉 Completed processing. Generated ${processedCount} new images.`
+      `🎉 Completed processing. Generated ${processedCount} new designs.`
     );
 
     return new Response(

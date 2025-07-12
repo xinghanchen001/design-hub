@@ -2,7 +2,7 @@
  * Storage utility functions for consistent path generation across all projects
  */
 
-export type ProjectType = 'project1' | 'project2' | 'project3';
+export type ProjectType = 'image-generation' | 'print-on-shirt' | 'journal';
 
 export interface StoragePathOptions {
   userId: string;
@@ -22,17 +22,17 @@ export function generateStoragePath(options: StoragePathOptions): string {
   const ts = timestamp || Date.now();
 
   switch (projectType) {
-    case 'project1':
-      // Project 1 (Image Generation): user_id/project1/project_id/generated_timestamp.png
-      return `${userId}/project1/${projectId}/generated_${ts}.png`;
+    case 'image-generation':
+      // Image Generation: user_id/image-generation/project_id/generated_timestamp.png
+      return `${userId}/image-generation/${projectId}/generated_${ts}.png`;
 
-    case 'project2':
-      // Project 2 (Print on Shirt): user_id/project2/project_id/print_on_shirt_timestamp.png
-      return `${userId}/project2/${projectId}/print_on_shirt_${ts}.png`;
+    case 'print-on-shirt':
+      // Print on Shirt: user_id/print-on-shirt/project_id/design_timestamp.png
+      return `${userId}/print-on-shirt/${projectId}/design_${ts}.png`;
 
-    case 'project3':
-      // Project 3 (Journal): user_id/project3/project_id/journal_timestamp.png
-      return `${userId}/project3/${projectId}/journal_${ts}.png`;
+    case 'journal':
+      // Journal: user_id/journal/project_id/journal_timestamp.png
+      return `${userId}/journal/${projectId}/journal_${ts}.png`;
 
     default:
       throw new Error(`Unknown project type: ${projectType}`);
@@ -88,7 +88,10 @@ export function parseStoragePath(path: string): {
   const filename = parts[parts.length - 1];
 
   // Check if it's a project-based path
-  if (parts.length >= 4 && parts[1].startsWith('project')) {
+  if (
+    parts.length >= 4 &&
+    ['image-generation', 'print-on-shirt', 'journal'].includes(parts[1])
+  ) {
     const projectType = parts[1] as ProjectType;
     const projectId = parts[2];
     return { userId, projectType, projectId, filename };
@@ -106,7 +109,7 @@ export function getBucketName(contentType: 'generated' | 'user-input'): string {
     case 'generated':
       return 'ai-generated-images';
     case 'user-input':
-      return 'user-images';
+      return 'user-bucket-images';
     default:
       throw new Error(`Unknown content type: ${contentType}`);
   }

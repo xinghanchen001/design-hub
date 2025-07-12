@@ -41,41 +41,31 @@ import {
   Folder,
   Check,
 } from 'lucide-react';
+import type { Tables } from '@/integrations/supabase/types';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  prompt: string | null;
-  reference_image_url: string | null;
-  schedule_enabled: boolean;
-  schedule_duration_hours: number;
-  max_images_to_generate: number;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  status: string;
-  created_at: string;
-  updated_at: string;
+type Project = Tables<'projects'>;
+type Schedule = Tables<'schedules'>;
+type BucketImage = Tables<'project_bucket_images'>;
+type GeneratedContent = Tables<'generated_content'>;
+
+interface ProjectSettings {
+  prompt?: string;
+  reference_image_url?: string;
+  max_images_to_generate?: number;
+  schedule_duration_hours?: number;
+  generation_interval_minutes?: number;
 }
 
-interface BucketImage {
-  id: string;
-  filename: string;
-  storage_path: string;
-  image_url: string;
-  file_size: number;
-  mime_type: string;
-  metadata: any;
-  created_at: string;
-  updated_at: string;
+interface PrintOnShirtSchedule extends Schedule {
+  // Add stats
+  total_images?: number;
+  completed_images?: number;
+  failed_images?: number;
 }
 
-interface PrintOnShirtSchedule {
-  id: string;
-  project_id: string; // Add project_id as required field
+interface FormData {
   name: string;
-  description: string | null;
+  description: string;
   prompt: string;
   input_image_1_url: string;
   input_image_2_url: string;
@@ -84,20 +74,9 @@ interface PrintOnShirtSchedule {
   schedule_duration_hours: number;
   max_images_to_generate: number;
   generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-  // Add bucket support - updated for multi-select
-  use_bucket_images?: boolean;
-  bucket_image_1_ids?: string[]; // Support multiple images for reference 1
-  bucket_image_2_ids?: string[]; // Support multiple images for reference 2
-  bucket_image_1_id?: string; // Keep for backward compatibility
-  bucket_image_2_id?: string; // Keep for backward compatibility
-  // Add stats
-  total_images?: number;
-  completed_images?: number;
-  failed_images?: number;
+  use_bucket_images: boolean;
+  bucket_image_1_ids: string[];
+  bucket_image_2_ids: string[];
 }
 
 const PrintOnShirtView = () => {
@@ -119,10 +98,12 @@ const PrintOnShirtView = () => {
   // Bucket state - updated for multi-select
   const [bucketImages, setBucketImages] = useState<BucketImage[]>([]);
   const [loadingBucketImages, setLoadingBucketImages] = useState(false);
-  const [selectedBucketImages1, setSelectedBucketImages1] =
-    useState<BucketImage[]>([]);
-  const [selectedBucketImages2, setSelectedBucketImages2] =
-    useState<BucketImage[]>([]);
+  const [selectedBucketImages1, setSelectedBucketImages1] = useState<
+    BucketImage[]
+  >([]);
+  const [selectedBucketImages2, setSelectedBucketImages2] = useState<
+    BucketImage[]
+  >([]);
   const [useBucketImages, setUseBucketImages] = useState(false);
 
   // Form state - updated for multi-select
@@ -161,19 +142,20 @@ const PrintOnShirtView = () => {
 
   const loadSchedules = async () => {
     try {
-      // Fetch schedules with image statistics
+      // Fetch schedules with content statistics
       const { data: schedulesData, error: schedulesError } = await supabase
-        .from('print_on_shirt_schedules')
+        .from('schedules')
         .select(
           `
           *,
-          print_on_shirt_images!schedule_id(
+          generated_content!schedule_id(
             id,
-            status
+            generation_status
           )
         `
         )
         .eq('user_id', user?.id)
+        .eq('project_type', 'print-on-shirt')
         .order('created_at', { ascending: false });
 
       if (schedulesError) throw schedulesError;
@@ -181,16 +163,17 @@ const PrintOnShirtView = () => {
       // Transform data to include statistics
       const schedulesWithStats =
         schedulesData?.map((schedule) => {
-          const images = schedule.print_on_shirt_images || [];
+          const contents = (schedule as any).generated_content || [];
           return {
             ...schedule,
-            total_images: images.length,
-            completed_images: images.filter(
-              (img: any) => img.status === 'completed'
+            total_images: contents.length,
+            completed_images: contents.filter(
+              (content: any) => content.generation_status === 'completed'
             ).length,
-            failed_images: images.filter((img: any) => img.status === 'failed')
-              .length,
-            print_on_shirt_images: undefined, // Remove the nested data
+            failed_images: contents.filter(
+              (content: any) => content.generation_status === 'failed'
+            ).length,
+            generated_content: undefined, // Remove the nested data
           };
         }) || [];
 
@@ -209,6 +192,7 @@ const PrintOnShirtView = () => {
         .from('project_bucket_images')
         .select('*')
         .eq('project_id', project.id)
+        .eq('project_type', 'print-on-shirt')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
@@ -223,15 +207,20 @@ const PrintOnShirtView = () => {
 
   const handleBucketImageSelect = (image: BucketImage, imageNumber: 1 | 2) => {
     if (imageNumber === 1) {
-      const isAlreadySelected = selectedBucketImages1.some(img => img.id === image.id);
+      const isAlreadySelected = selectedBucketImages1.some(
+        (img) => img.id === image.id
+      );
       if (isAlreadySelected) {
         // Remove from selection
-        const newSelection = selectedBucketImages1.filter(img => img.id !== image.id);
+        const newSelection = selectedBucketImages1.filter(
+          (img) => img.id !== image.id
+        );
         setSelectedBucketImages1(newSelection);
         setFormData((prev) => ({
           ...prev,
-          bucket_image_1_ids: newSelection.map(img => img.id),
-          input_image_1_url: newSelection.length > 0 ? newSelection[0].image_url : '',
+          bucket_image_1_ids: newSelection.map((img) => img.id),
+          input_image_1_url:
+            newSelection.length > 0 ? newSelection[0].image_url : '',
         }));
       } else {
         // Add to selection
@@ -239,20 +228,25 @@ const PrintOnShirtView = () => {
         setSelectedBucketImages1(newSelection);
         setFormData((prev) => ({
           ...prev,
-          bucket_image_1_ids: newSelection.map(img => img.id),
+          bucket_image_1_ids: newSelection.map((img) => img.id),
           input_image_1_url: newSelection[0].image_url,
         }));
       }
     } else {
-      const isAlreadySelected = selectedBucketImages2.some(img => img.id === image.id);
+      const isAlreadySelected = selectedBucketImages2.some(
+        (img) => img.id === image.id
+      );
       if (isAlreadySelected) {
         // Remove from selection
-        const newSelection = selectedBucketImages2.filter(img => img.id !== image.id);
+        const newSelection = selectedBucketImages2.filter(
+          (img) => img.id !== image.id
+        );
         setSelectedBucketImages2(newSelection);
         setFormData((prev) => ({
           ...prev,
-          bucket_image_2_ids: newSelection.map(img => img.id),
-          input_image_2_url: newSelection.length > 0 ? newSelection[0].image_url : '',
+          bucket_image_2_ids: newSelection.map((img) => img.id),
+          input_image_2_url:
+            newSelection.length > 0 ? newSelection[0].image_url : '',
         }));
       } else {
         // Add to selection
@@ -260,7 +254,7 @@ const PrintOnShirtView = () => {
         setSelectedBucketImages2(newSelection);
         setFormData((prev) => ({
           ...prev,
-          bucket_image_2_ids: newSelection.map(img => img.id),
+          bucket_image_2_ids: newSelection.map((img) => img.id),
           input_image_2_url: newSelection[0].image_url,
         }));
       }
@@ -269,20 +263,26 @@ const PrintOnShirtView = () => {
 
   const removeBucketSelection = (image: BucketImage, imageNumber: 1 | 2) => {
     if (imageNumber === 1) {
-      const newSelection = selectedBucketImages1.filter(img => img.id !== image.id);
+      const newSelection = selectedBucketImages1.filter(
+        (img) => img.id !== image.id
+      );
       setSelectedBucketImages1(newSelection);
       setFormData((prev) => ({
         ...prev,
-        bucket_image_1_ids: newSelection.map(img => img.id),
-        input_image_1_url: newSelection.length > 0 ? newSelection[0].image_url : '',
+        bucket_image_1_ids: newSelection.map((img) => img.id),
+        input_image_1_url:
+          newSelection.length > 0 ? newSelection[0].image_url : '',
       }));
     } else {
-      const newSelection = selectedBucketImages2.filter(img => img.id !== image.id);
+      const newSelection = selectedBucketImages2.filter(
+        (img) => img.id !== image.id
+      );
       setSelectedBucketImages2(newSelection);
       setFormData((prev) => ({
         ...prev,
-        bucket_image_2_ids: newSelection.map(img => img.id),
-        input_image_2_url: newSelection.length > 0 ? newSelection[0].image_url : '',
+        bucket_image_2_ids: newSelection.map((img) => img.id),
+        input_image_2_url:
+          newSelection.length > 0 ? newSelection[0].image_url : '',
       }));
     }
   };
@@ -352,32 +352,46 @@ const PrintOnShirtView = () => {
       return;
     }
 
-    if (selectedBucketImages1.length === 0 || selectedBucketImages2.length === 0) {
+    if (
+      selectedBucketImages1.length === 0 ||
+      selectedBucketImages2.length === 0
+    ) {
       toast.error('Please select at least one image from each reference set');
       return;
     }
 
     setIsSaving(true);
     try {
-      const { data: newSchedule, error: insertError } = await supabase
-        .from('print_on_shirt_schedules')
-        .insert({
-          user_id: user?.id,
-          project_id: project.id, // Add project_id to link schedule to project
-          name: formData.name,
-          description: formData.description || null,
-          prompt: formData.prompt,
+      const scheduleData = {
+        user_id: user?.id,
+        project_id: project.id,
+        project_type: 'print-on-shirt',
+        name: formData.name,
+        description: formData.description || null,
+        prompt: formData.prompt,
+        schedule_config: {
+          enabled: formData.schedule_enabled,
+          duration_hours: formData.schedule_duration_hours,
+          interval_minutes: formData.generation_interval_minutes,
+        },
+        generation_settings: {
+          max_images: formData.max_images_to_generate,
+          aspect_ratio: formData.aspect_ratio,
           input_image_1_url: formData.input_image_1_url,
           input_image_2_url: formData.input_image_2_url,
-          aspect_ratio: formData.aspect_ratio,
-          schedule_enabled: formData.schedule_enabled,
-          schedule_duration_hours: formData.schedule_duration_hours,
-          max_images_to_generate: formData.max_images_to_generate,
-          generation_interval_minutes: formData.generation_interval_minutes,
-          use_bucket_images: true, // Always true since bucket is the only option
+        },
+        bucket_settings: {
+          use_bucket_images: true,
           bucket_image_1_ids: formData.bucket_image_1_ids,
           bucket_image_2_ids: formData.bucket_image_2_ids,
-        })
+        },
+        status: formData.schedule_enabled ? 'active' : 'paused',
+        next_run: formData.schedule_enabled ? new Date().toISOString() : null, // Set next_run only if schedule is enabled
+      };
+
+      const { data: newSchedule, error: insertError } = await supabase
+        .from('schedules')
+        .insert(scheduleData)
         .select()
         .single();
 
@@ -418,33 +432,44 @@ const PrintOnShirtView = () => {
 
   const handleEditSchedule = (schedule: PrintOnShirtSchedule) => {
     setEditingSchedule(schedule);
+
+    const scheduleConfig = (schedule.schedule_config as any) || {};
+    const generationSettings = (schedule.generation_settings as any) || {};
+    const bucketSettings = (schedule.bucket_settings as any) || {};
+
     setFormData({
       name: schedule.name,
       description: schedule.description || '',
-      prompt: schedule.prompt,
-      input_image_1_url: schedule.input_image_1_url,
-      input_image_2_url: schedule.input_image_2_url,
-      aspect_ratio: schedule.aspect_ratio,
-      schedule_enabled: schedule.schedule_enabled,
-      schedule_duration_hours: schedule.schedule_duration_hours,
-      max_images_to_generate: schedule.max_images_to_generate,
-      generation_interval_minutes: schedule.generation_interval_minutes,
-      use_bucket_images: schedule.use_bucket_images || false,
-      bucket_image_1_ids: schedule.bucket_image_1_ids || [],
-      bucket_image_2_ids: schedule.bucket_image_2_ids || [],
+      prompt: schedule.prompt || '',
+      input_image_1_url: generationSettings.input_image_1_url || '',
+      input_image_2_url: generationSettings.input_image_2_url || '',
+      aspect_ratio: generationSettings.aspect_ratio || '1:1',
+      schedule_enabled: schedule.status === 'active',
+      schedule_duration_hours: scheduleConfig.duration_hours || 24,
+      max_images_to_generate: generationSettings.max_images || 10,
+      generation_interval_minutes: scheduleConfig.interval_minutes || 60,
+      use_bucket_images: bucketSettings.use_bucket_images || false,
+      bucket_image_1_ids: bucketSettings.bucket_image_1_ids || [],
+      bucket_image_2_ids: bucketSettings.bucket_image_2_ids || [],
     });
 
     // Set bucket images - always enabled
     setUseBucketImages(true);
-    if (schedule.bucket_image_1_ids && schedule.bucket_image_1_ids.length > 0) {
-      const bucketImages1 = bucketImages.filter(
-        (img) => schedule.bucket_image_1_ids!.includes(img.id)
+    if (
+      bucketSettings.bucket_image_1_ids &&
+      bucketSettings.bucket_image_1_ids.length > 0
+    ) {
+      const bucketImages1 = bucketImages.filter((img) =>
+        bucketSettings.bucket_image_1_ids.includes(img.id)
       );
       setSelectedBucketImages1(bucketImages1);
     }
-    if (schedule.bucket_image_2_ids && schedule.bucket_image_2_ids.length > 0) {
-      const bucketImages2 = bucketImages.filter(
-        (img) => schedule.bucket_image_2_ids!.includes(img.id)
+    if (
+      bucketSettings.bucket_image_2_ids &&
+      bucketSettings.bucket_image_2_ids.length > 0
+    ) {
+      const bucketImages2 = bucketImages.filter((img) =>
+        bucketSettings.bucket_image_2_ids.includes(img.id)
       );
       setSelectedBucketImages2(bucketImages2);
     }
@@ -460,31 +485,44 @@ const PrintOnShirtView = () => {
       return;
     }
 
-    if (selectedBucketImages1.length === 0 || selectedBucketImages2.length === 0) {
+    if (
+      selectedBucketImages1.length === 0 ||
+      selectedBucketImages2.length === 0
+    ) {
       toast.error('Please select at least one image from each reference set');
       return;
     }
 
     setIsSaving(true);
     try {
-      const { error: updateError } = await supabase
-        .from('print_on_shirt_schedules')
-        .update({
-          project_id: project.id, // Ensure project_id is included in updates
-          name: formData.name,
-          description: formData.description || null,
-          prompt: formData.prompt,
+      const updateData = {
+        project_id: project.id,
+        name: formData.name,
+        description: formData.description || null,
+        prompt: formData.prompt,
+        schedule_config: {
+          enabled: formData.schedule_enabled,
+          duration_hours: formData.schedule_duration_hours,
+          interval_minutes: formData.generation_interval_minutes,
+        },
+        generation_settings: {
+          max_images: formData.max_images_to_generate,
+          aspect_ratio: formData.aspect_ratio,
           input_image_1_url: formData.input_image_1_url,
           input_image_2_url: formData.input_image_2_url,
-          aspect_ratio: formData.aspect_ratio,
-          schedule_enabled: formData.schedule_enabled,
-          schedule_duration_hours: formData.schedule_duration_hours,
-          max_images_to_generate: formData.max_images_to_generate,
-          generation_interval_minutes: formData.generation_interval_minutes,
-          use_bucket_images: true, // Always true since bucket is the only option
+        },
+        bucket_settings: {
+          use_bucket_images: true,
           bucket_image_1_ids: formData.bucket_image_1_ids,
           bucket_image_2_ids: formData.bucket_image_2_ids,
-        })
+        },
+        status: formData.schedule_enabled ? 'active' : 'paused',
+        next_run: formData.schedule_enabled ? new Date().toISOString() : null, // Update next_run when enabling/disabling schedule
+      };
+
+      const { error: updateError } = await supabase
+        .from('schedules')
+        .update(updateData)
         .eq('id', editingSchedule.id);
 
       if (updateError) throw updateError;
@@ -693,7 +731,6 @@ const PrintOnShirtView = () => {
 
             {/* Image Selection Section */}
             <div className="space-y-6">
-
               {/* Batch Generation Information */}
               <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
                 <div className="flex items-start gap-3">
@@ -705,16 +742,30 @@ const PrintOnShirtView = () => {
                       🔄 Batch Generation Mode
                     </h4>
                     <p className="text-sm text-blue-800 mb-2">
-                      This schedule will generate images for <strong>every combination</strong> of selected bucket images:
+                      This schedule will generate images for{' '}
+                      <strong>every combination</strong> of selected bucket
+                      images:
                     </p>
                     <div className="text-xs text-blue-700 space-y-1">
-                      <div>• Set 1: {selectedBucketImages1.length} image{selectedBucketImages1.length !== 1 ? 's' : ''} selected</div>
-                      <div>• Set 2: {selectedBucketImages2.length} image{selectedBucketImages2.length !== 1 ? 's' : ''} selected</div>
-                      {selectedBucketImages1.length > 0 && selectedBucketImages2.length > 0 && (
-                        <div className="mt-2 font-medium">
-                          📊 Total combinations: {selectedBucketImages1.length} × {selectedBucketImages2.length} = {selectedBucketImages1.length * selectedBucketImages2.length} images will be generated
-                        </div>
-                      )}
+                      <div>
+                        • Set 1: {selectedBucketImages1.length} image
+                        {selectedBucketImages1.length !== 1 ? 's' : ''} selected
+                      </div>
+                      <div>
+                        • Set 2: {selectedBucketImages2.length} image
+                        {selectedBucketImages2.length !== 1 ? 's' : ''} selected
+                      </div>
+                      {selectedBucketImages1.length > 0 &&
+                        selectedBucketImages2.length > 0 && (
+                          <div className="mt-2 font-medium">
+                            📊 Total combinations:{' '}
+                            {selectedBucketImages1.length} ×{' '}
+                            {selectedBucketImages2.length} ={' '}
+                            {selectedBucketImages1.length *
+                              selectedBucketImages2.length}{' '}
+                            images will be generated
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -723,8 +774,11 @@ const PrintOnShirtView = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Image 1 */}
                 <div className="space-y-4">
-                  <Label>Reference Images Set 1 * (Select multiple for batch generation)</Label>
-                  
+                  <Label>
+                    Reference Images Set 1 * (Select multiple for batch
+                    generation)
+                  </Label>
+
                   {loadingBucketImages ? (
                     <div className="text-center py-8">
                       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
@@ -762,10 +816,7 @@ const PrintOnShirtView = () => {
                           </div>
                           <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                             {selectedBucketImages1.map((image) => (
-                              <div
-                                key={image.id}
-                                className="relative group"
-                              >
+                              <div key={image.id} className="relative group">
                                 <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
                                   <img
                                     src={image.image_url}
@@ -777,7 +828,9 @@ const PrintOnShirtView = () => {
                                     variant="destructive"
                                     size="sm"
                                     className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
-                                    onClick={() => removeBucketSelection(image, 1)}
+                                    onClick={() =>
+                                      removeBucketSelection(image, 1)
+                                    }
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -798,35 +851,45 @@ const PrintOnShirtView = () => {
                         </h4>
                         <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
                           {bucketImages.map((image) => {
-                            const isSelected = selectedBucketImages1.some(img => img.id === image.id);
+                            const isSelected = selectedBucketImages1.some(
+                              (img) => img.id === image.id
+                            );
                             return (
                               <div
                                 key={image.id}
                                 className={`relative group cursor-pointer ${
                                   isSelected ? 'ring-2 ring-primary' : ''
                                 }`}
-                                onClick={() => handleBucketImageSelect(image, 1)}
+                                onClick={() =>
+                                  handleBucketImageSelect(image, 1)
+                                }
                               >
-                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
-                                  isSelected 
-                                    ? 'border-primary border-2' 
-                                    : 'border-border/50 hover:border-primary'
-                                }`}>
+                                <div
+                                  className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                    isSelected
+                                      ? 'border-primary border-2'
+                                      : 'border-border/50 hover:border-primary'
+                                  }`}
+                                >
                                   <img
                                     src={image.image_url}
                                     alt={image.filename}
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
-                                    isSelected 
-                                      ? 'bg-primary/20' 
-                                      : 'bg-black/0 group-hover:bg-black/20'
-                                  }`}>
-                                    <div className={`transition-opacity ${
-                                      isSelected 
-                                        ? 'opacity-100' 
-                                        : 'opacity-0 group-hover:opacity-100'
-                                    }`}>
+                                  <div
+                                    className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                      isSelected
+                                        ? 'bg-primary/20'
+                                        : 'bg-black/0 group-hover:bg-black/20'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`transition-opacity ${
+                                        isSelected
+                                          ? 'opacity-100'
+                                          : 'opacity-0 group-hover:opacity-100'
+                                      }`}
+                                    >
                                       {isSelected ? (
                                         <div className="bg-primary rounded-full p-1">
                                           <Check className="h-6 w-6 text-white" />
@@ -851,8 +914,11 @@ const PrintOnShirtView = () => {
 
                 {/* Image 2 */}
                 <div className="space-y-4">
-                  <Label>Reference Images Set 2 * (Select multiple for batch generation)</Label>
-                  
+                  <Label>
+                    Reference Images Set 2 * (Select multiple for batch
+                    generation)
+                  </Label>
+
                   {loadingBucketImages ? (
                     <div className="text-center py-8">
                       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
@@ -890,10 +956,7 @@ const PrintOnShirtView = () => {
                           </div>
                           <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                             {selectedBucketImages2.map((image) => (
-                              <div
-                                key={image.id}
-                                className="relative group"
-                              >
+                              <div key={image.id} className="relative group">
                                 <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
                                   <img
                                     src={image.image_url}
@@ -905,7 +968,9 @@ const PrintOnShirtView = () => {
                                     variant="destructive"
                                     size="sm"
                                     className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
-                                    onClick={() => removeBucketSelection(image, 2)}
+                                    onClick={() =>
+                                      removeBucketSelection(image, 2)
+                                    }
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -926,35 +991,45 @@ const PrintOnShirtView = () => {
                         </h4>
                         <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
                           {bucketImages.map((image) => {
-                            const isSelected = selectedBucketImages2.some(img => img.id === image.id);
+                            const isSelected = selectedBucketImages2.some(
+                              (img) => img.id === image.id
+                            );
                             return (
                               <div
                                 key={image.id}
                                 className={`relative group cursor-pointer ${
                                   isSelected ? 'ring-2 ring-primary' : ''
                                 }`}
-                                onClick={() => handleBucketImageSelect(image, 2)}
+                                onClick={() =>
+                                  handleBucketImageSelect(image, 2)
+                                }
                               >
-                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
-                                  isSelected 
-                                    ? 'border-primary border-2' 
-                                    : 'border-border/50 hover:border-primary'
-                                }`}>
+                                <div
+                                  className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                    isSelected
+                                      ? 'border-primary border-2'
+                                      : 'border-border/50 hover:border-primary'
+                                  }`}
+                                >
                                   <img
                                     src={image.image_url}
                                     alt={image.filename}
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
-                                    isSelected 
-                                      ? 'bg-primary/20' 
-                                      : 'bg-black/0 group-hover:bg-black/20'
-                                  }`}>
-                                    <div className={`transition-opacity ${
-                                      isSelected 
-                                        ? 'opacity-100' 
-                                        : 'opacity-0 group-hover:opacity-100'
-                                    }`}>
+                                  <div
+                                    className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                      isSelected
+                                        ? 'bg-primary/20'
+                                        : 'bg-black/0 group-hover:bg-black/20'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`transition-opacity ${
+                                        isSelected
+                                          ? 'opacity-100'
+                                          : 'opacity-0 group-hover:opacity-100'
+                                      }`}
+                                    >
                                       {isSelected ? (
                                         <div className="bg-primary rounded-full p-1">
                                           <Check className="h-6 w-6 text-white" />
@@ -1169,7 +1244,9 @@ const PrintOnShirtView = () => {
                       use_bucket_images: checked,
                     }));
                     if (checked) {
-                      toast.info('When using bucket images, the schedule will generate one image for each combination of bucket images.');
+                      toast.info(
+                        'When using bucket images, the schedule will generate one image for each combination of bucket images.'
+                      );
                     }
                   }}
                 />
@@ -1181,7 +1258,10 @@ const PrintOnShirtView = () => {
               {useBucketImages && (
                 <div className="p-4 bg-muted/50 rounded-lg">
                   <p className="text-sm text-muted-foreground">
-                    <strong>Batch Generation Mode:</strong> When enabled, this schedule will generate one image for each possible combination of images from your bucket. Select bucket images below to use as references.
+                    <strong>Batch Generation Mode:</strong> When enabled, this
+                    schedule will generate one image for each possible
+                    combination of images from your bucket. Select bucket images
+                    below to use as references.
                   </p>
                 </div>
               )}
@@ -1189,8 +1269,11 @@ const PrintOnShirtView = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Image 1 */}
                 <div className="space-y-4">
-                  <Label>Reference Images Set 1 * (Select multiple for batch generation)</Label>
-                  
+                  <Label>
+                    Reference Images Set 1 * (Select multiple for batch
+                    generation)
+                  </Label>
+
                   {loadingBucketImages ? (
                     <div className="text-center py-8">
                       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
@@ -1228,10 +1311,7 @@ const PrintOnShirtView = () => {
                           </div>
                           <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                             {selectedBucketImages1.map((image) => (
-                              <div
-                                key={image.id}
-                                className="relative group"
-                              >
+                              <div key={image.id} className="relative group">
                                 <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
                                   <img
                                     src={image.image_url}
@@ -1243,7 +1323,9 @@ const PrintOnShirtView = () => {
                                     variant="destructive"
                                     size="sm"
                                     className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
-                                    onClick={() => removeBucketSelection(image, 1)}
+                                    onClick={() =>
+                                      removeBucketSelection(image, 1)
+                                    }
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -1264,35 +1346,45 @@ const PrintOnShirtView = () => {
                         </h4>
                         <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
                           {bucketImages.map((image) => {
-                            const isSelected = selectedBucketImages1.some(img => img.id === image.id);
+                            const isSelected = selectedBucketImages1.some(
+                              (img) => img.id === image.id
+                            );
                             return (
                               <div
                                 key={image.id}
                                 className={`relative group cursor-pointer ${
                                   isSelected ? 'ring-2 ring-primary' : ''
                                 }`}
-                                onClick={() => handleBucketImageSelect(image, 1)}
+                                onClick={() =>
+                                  handleBucketImageSelect(image, 1)
+                                }
                               >
-                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
-                                  isSelected 
-                                    ? 'border-primary border-2' 
-                                    : 'border-border/50 hover:border-primary'
-                                }`}>
+                                <div
+                                  className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                    isSelected
+                                      ? 'border-primary border-2'
+                                      : 'border-border/50 hover:border-primary'
+                                  }`}
+                                >
                                   <img
                                     src={image.image_url}
                                     alt={image.filename}
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
-                                    isSelected 
-                                      ? 'bg-primary/20' 
-                                      : 'bg-black/0 group-hover:bg-black/20'
-                                  }`}>
-                                    <div className={`transition-opacity ${
-                                      isSelected 
-                                        ? 'opacity-100' 
-                                        : 'opacity-0 group-hover:opacity-100'
-                                    }`}>
+                                  <div
+                                    className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                      isSelected
+                                        ? 'bg-primary/20'
+                                        : 'bg-black/0 group-hover:bg-black/20'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`transition-opacity ${
+                                        isSelected
+                                          ? 'opacity-100'
+                                          : 'opacity-0 group-hover:opacity-100'
+                                      }`}
+                                    >
                                       {isSelected ? (
                                         <div className="bg-primary rounded-full p-1">
                                           <Check className="h-6 w-6 text-white" />
@@ -1317,8 +1409,11 @@ const PrintOnShirtView = () => {
 
                 {/* Image 2 */}
                 <div className="space-y-4">
-                  <Label>Reference Images Set 2 * (Select multiple for batch generation)</Label>
-                  
+                  <Label>
+                    Reference Images Set 2 * (Select multiple for batch
+                    generation)
+                  </Label>
+
                   {loadingBucketImages ? (
                     <div className="text-center py-8">
                       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
@@ -1356,10 +1451,7 @@ const PrintOnShirtView = () => {
                           </div>
                           <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                             {selectedBucketImages2.map((image) => (
-                              <div
-                                key={image.id}
-                                className="relative group"
-                              >
+                              <div key={image.id} className="relative group">
                                 <div className="aspect-square rounded-lg overflow-hidden bg-muted border-2 border-primary">
                                   <img
                                     src={image.image_url}
@@ -1371,7 +1463,9 @@ const PrintOnShirtView = () => {
                                     variant="destructive"
                                     size="sm"
                                     className="absolute top-1 right-1 h-6 w-6 p-0 opacity-80 hover:opacity-100"
-                                    onClick={() => removeBucketSelection(image, 2)}
+                                    onClick={() =>
+                                      removeBucketSelection(image, 2)
+                                    }
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -1392,35 +1486,45 @@ const PrintOnShirtView = () => {
                         </h4>
                         <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
                           {bucketImages.map((image) => {
-                            const isSelected = selectedBucketImages2.some(img => img.id === image.id);
+                            const isSelected = selectedBucketImages2.some(
+                              (img) => img.id === image.id
+                            );
                             return (
                               <div
                                 key={image.id}
                                 className={`relative group cursor-pointer ${
                                   isSelected ? 'ring-2 ring-primary' : ''
                                 }`}
-                                onClick={() => handleBucketImageSelect(image, 2)}
+                                onClick={() =>
+                                  handleBucketImageSelect(image, 2)
+                                }
                               >
-                                <div className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
-                                  isSelected 
-                                    ? 'border-primary border-2' 
-                                    : 'border-border/50 hover:border-primary'
-                                }`}>
+                                <div
+                                  className={`aspect-square rounded-lg overflow-hidden bg-muted border transition-colors ${
+                                    isSelected
+                                      ? 'border-primary border-2'
+                                      : 'border-border/50 hover:border-primary'
+                                  }`}
+                                >
                                   <img
                                     src={image.image_url}
                                     alt={image.filename}
                                     className="w-full h-full object-cover"
                                   />
-                                  <div className={`absolute inset-0 transition-colors flex items-center justify-center ${
-                                    isSelected 
-                                      ? 'bg-primary/20' 
-                                      : 'bg-black/0 group-hover:bg-black/20'
-                                  }`}>
-                                    <div className={`transition-opacity ${
-                                      isSelected 
-                                        ? 'opacity-100' 
-                                        : 'opacity-0 group-hover:opacity-100'
-                                    }`}>
+                                  <div
+                                    className={`absolute inset-0 transition-colors flex items-center justify-center ${
+                                      isSelected
+                                        ? 'bg-primary/20'
+                                        : 'bg-black/0 group-hover:bg-black/20'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`transition-opacity ${
+                                        isSelected
+                                          ? 'opacity-100'
+                                          : 'opacity-0 group-hover:opacity-100'
+                                      }`}
+                                    >
                                       {isSelected ? (
                                         <div className="bg-primary rounded-full p-1">
                                           <Check className="h-6 w-6 text-white" />
@@ -1557,7 +1661,7 @@ const PrintOnShirtView = () => {
                   <div className="flex items-center gap-3">
                     <div
                       className={`w-3 h-3 rounded-full ${
-                        schedule.schedule_enabled && schedule.is_active
+                        schedule.status === 'active'
                           ? 'bg-green-500'
                           : 'bg-gray-400'
                       }`}
@@ -1567,24 +1671,17 @@ const PrintOnShirtView = () => {
                   <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
                       <span className="text-sm font-medium">
-                        {schedule.schedule_enabled && schedule.is_active
-                          ? 'Active'
-                          : 'Paused'}
+                        {schedule.status === 'active' ? 'Active' : 'Paused'}
                       </span>
                       <Switch
-                        checked={
-                          schedule.schedule_enabled && schedule.is_active
-                        }
+                        checked={schedule.status === 'active'}
                         onCheckedChange={async () => {
                           try {
-                            const newStatus = !(
-                              schedule.schedule_enabled && schedule.is_active
-                            );
+                            const newStatus = !(schedule.status === 'active');
                             const { error } = await supabase
-                              .from('print_on_shirt_schedules')
+                              .from('schedules')
                               .update({
-                                schedule_enabled: newStatus,
-                                is_active: newStatus,
+                                status: newStatus ? 'active' : 'paused',
                               })
                               .eq('id', schedule.id);
 
@@ -1676,7 +1773,7 @@ const PrintOnShirtView = () => {
 
                         try {
                           const { error } = await supabase
-                            .from('print_on_shirt_schedules')
+                            .from('schedules')
                             .delete()
                             .eq('id', schedule.id);
 
@@ -1748,7 +1845,7 @@ const PrintOnShirtView = () => {
                       <div className="text-muted-foreground">Total</div>
                     </div>
                   </div>
-                  {!schedule.schedule_enabled &&
+                  {!schedule.status === 'active' &&
                     schedule.total_images &&
                     schedule.total_images >=
                       schedule.max_images_to_generate && (
@@ -1763,7 +1860,7 @@ const PrintOnShirtView = () => {
                         </button>
                       </div>
                     )}
-                  {!schedule.schedule_enabled &&
+                  {!schedule.status === 'active' &&
                     (!schedule.total_images ||
                       schedule.total_images <
                         schedule.max_images_to_generate) && (
@@ -1788,14 +1885,10 @@ const PrintOnShirtView = () => {
                   </div>
                   <Badge
                     variant={
-                      schedule.schedule_enabled && schedule.is_active
-                        ? 'default'
-                        : 'secondary'
+                      schedule.status === 'active' ? 'default' : 'secondary'
                     }
                   >
-                    {schedule.schedule_enabled && schedule.is_active
-                      ? 'Active'
-                      : 'Paused'}
+                    {schedule.status === 'active' ? 'Active' : 'Paused'}
                   </Badge>
                 </div>
               </CardContent>

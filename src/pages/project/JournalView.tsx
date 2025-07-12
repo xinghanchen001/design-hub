@@ -63,8 +63,13 @@ const JournalView = () => {
       const { data: session } = await supabase.auth.getSession();
       if (!session.session) return;
 
+      // Get the correct Supabase URL from environment or client
+      const supabaseUrl =
+        import.meta.env.VITE_SUPABASE_URL ||
+        'https://pwysjzyhhyfxhbymmklz.supabase.co';
+
       const response = await fetch(
-        'https://sphgdlqoabzsyhtyopim.supabase.co/functions/v1/journal-blog-post',
+        `${supabaseUrl}/functions/v1/journal-blog-post`,
         {
           method: 'GET',
           headers: {
@@ -101,8 +106,13 @@ const JournalView = () => {
         return;
       }
 
+      // Get the correct Supabase URL from environment or client
+      const supabaseUrl =
+        import.meta.env.VITE_SUPABASE_URL ||
+        'https://pwysjzyhhyfxhbymmklz.supabase.co';
+
       const response = await fetch(
-        'https://sphgdlqoabzsyhtyopim.supabase.co/functions/v1/journal-blog-post',
+        `${supabaseUrl}/functions/v1/journal-blog-post`,
         {
           method: 'POST',
           headers: {

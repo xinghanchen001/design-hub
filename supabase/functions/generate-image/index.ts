@@ -1,10 +1,39 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Replicate from 'npm:replicate';
-import {
-  generateStoragePath,
-  getBucketName,
-} from '../_shared/storage-utils.ts';
+
+// Inline storage utilities
+function generateStoragePath(options: {
+  userId: string;
+  projectId: string;
+  projectType: string;
+  timestamp?: number;
+}): string {
+  const { userId, projectId, projectType, timestamp } = options;
+  const ts = timestamp || Date.now();
+
+  switch (projectType) {
+    case 'image-generation':
+      return `${userId}/image-generation/${projectId}/generated_${ts}.png`;
+    case 'print-on-shirt':
+      return `${userId}/print-on-shirt/${projectId}/design_${ts}.png`;
+    case 'journal':
+      return `${userId}/journal/${projectId}/journal_${ts}.png`;
+    default:
+      return `${userId}/${projectType}/${projectId}/content_${ts}.png`;
+  }
+}
+
+function getBucketName(contentType: string): string {
+  switch (contentType) {
+    case 'generated':
+      return 'generated-images';
+    case 'user-input':
+      return 'user-bucket-images';
+    default:
+      return 'generated-images';
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,12 +74,12 @@ Deno.serve(async (req) => {
       auth: REPLICATE_API_KEY,
     });
 
-    const { project_id, manual_generation = false, job_id = null } = body;
+    const { schedule_id, manual_generation = false, job_id = null } = body;
 
-    if (!project_id) {
+    if (!schedule_id) {
       return new Response(
         JSON.stringify({
-          error: 'Missing required field: project_id is required',
+          error: 'Missing required field: schedule_id is required',
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -59,26 +88,28 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch project details
-    console.log('Fetching project:', project_id);
-    const { data: project, error: projectError } = await supabase
-      .from('projects')
+    // Fetch schedule details
+    console.log('Fetching schedule:', schedule_id);
+    const { data: schedule, error: scheduleError } = await supabase
+      .from('schedules')
       .select('*')
-      .eq('id', project_id)
+      .eq('id', schedule_id)
       .single();
 
-    if (projectError) {
-      console.error('Project fetch error:', projectError);
-      throw new Error(`Failed to fetch project: ${projectError.message}`);
+    if (scheduleError) {
+      console.error('Schedule fetch error:', scheduleError);
+      throw new Error(`Failed to fetch schedule: ${scheduleError.message}`);
     }
 
-    if (!project) {
-      throw new Error('Project not found');
+    if (!schedule) {
+      throw new Error('Schedule not found');
     }
 
-    console.log('Project found:', project.name);
-    console.log('Project prompt:', project.prompt);
-    console.log('Use bucket images:', project.use_bucket_images);
+    console.log('Schedule found:', schedule.name);
+    console.log('Schedule prompt:', schedule.prompt);
+
+    const bucketSettings = (schedule.bucket_settings as any) || {};
+    const generationSettings = (schedule.generation_settings as any) || {};
 
     // Create or update generation job
     let generation_job_id = job_id;
@@ -89,10 +120,10 @@ Deno.serve(async (req) => {
         .from('generation_jobs')
         .insert([
           {
-            project_id: project_id,
-            status: 'running',
-            scheduled_at: new Date().toISOString(),
-            started_at: new Date().toISOString(),
+            schedule_id: schedule_id,
+            user_id: schedule.user_id,
+            status: 'processing',
+            created_at: new Date().toISOString(),
           },
         ])
         .select()
@@ -110,8 +141,7 @@ Deno.serve(async (req) => {
       const { error: updateError } = await supabase
         .from('generation_jobs')
         .update({
-          status: 'running',
-          started_at: new Date().toISOString(),
+          status: 'processing',
         })
         .eq('id', job_id);
 
@@ -126,18 +156,19 @@ Deno.serve(async (req) => {
     let totalImagesGenerated = 0;
     const generatedImages = [];
 
-    // Check if this project uses bucket images for batch generation
-    if (project.use_bucket_images) {
+    // Check if this schedule uses bucket images for batch generation
+    if (bucketSettings.use_bucket_images) {
       console.log(
         '🗂️ Bucket mode: Fetching bucket images for batch generation...'
       );
 
-      // Fetch all bucket images for this project
+      // Fetch all bucket images for this project and user
       const { data: bucketImages, error: bucketError } = await supabase
         .from('project_bucket_images')
         .select('*')
-        .eq('project_id', project_id)
-        .eq('user_id', project.user_id)
+        .eq('project_id', schedule.project_id)
+        .eq('user_id', schedule.user_id)
+        .eq('project_type', 'image-generation')
         .order('created_at', { ascending: false });
 
       if (bucketError) {
@@ -174,9 +205,9 @@ Deno.serve(async (req) => {
             'black-forest-labs/flux-kontext-max',
             {
               input: {
-                prompt: project.prompt,
+                prompt: schedule.prompt,
                 image: bucketImage.image_url, // Use bucket image as reference
-                aspect_ratio: '1:1',
+                aspect_ratio: generationSettings.aspect_ratio || '1:1',
                 output_format: 'png',
                 safety_tolerance: 2,
               },
@@ -207,9 +238,9 @@ Deno.serve(async (req) => {
           // Create unique filename for this generation
           const timestamp = Date.now() + totalImagesGenerated; // Add offset to prevent conflicts
           const filename = generateStoragePath({
-            userId: project.user_id,
-            projectId: project_id,
-            projectType: 'project1',
+            userId: schedule.user_id,
+            projectId: schedule.project_id,
+            projectType: 'image-generation',
             timestamp: timestamp,
           });
 
@@ -238,34 +269,45 @@ Deno.serve(async (req) => {
           const storedImageUrl = publicUrlData.publicUrl;
           console.log('📥 Image stored successfully at:', storedImageUrl);
 
-          // Save generated image to database
-          const { data: savedImage, error: imageError } = await supabase
-            .from('generated_images')
+          // Save generated content to unified table
+          const { data: savedContent, error: contentError } = await supabase
+            .from('generated_content')
             .insert([
               {
-                project_id: project_id,
-                generation_job_id: generation_job_id,
-                image_url: storedImageUrl,
-                storage_path: filename,
-                prompt: project.prompt,
-                reference_image_url: bucketImage.image_url,
-                bucket_image_id: bucketImage.id,
-                model_used: 'flux-kontext-max',
-                aspect_ratio: '1:1',
-                generation_time_seconds: generationTime,
+                user_id: schedule.user_id,
+                project_id: schedule.project_id,
+                schedule_id: schedule_id,
+                project_type: schedule.project_type,
+                content_type: 'image',
+                title: `Generated from ${bucketImage.filename}`,
+                description: schedule.prompt,
+                content_url: storedImageUrl,
+                generation_status: 'completed',
+                metadata: {
+                  prompt: schedule.prompt,
+                  storage_path: filename,
+                  model_used: 'flux-dev',
+                  reference_image_url: bucketImage.image_url,
+                  reference_image_filename: bucketImage.filename,
+                  aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                  generation_time_seconds: generationTime,
+                  output_format: 'png',
+                  bucket_generation: true,
+                  generation_settings: generationSettings,
+                },
               },
             ])
             .select()
             .single();
 
-          if (imageError) {
-            console.error('Image save error:', imageError);
+          if (contentError) {
+            console.error('Content save error:', contentError);
             throw new Error(
-              `Failed to save generated image: ${imageError.message}`
+              `Failed to save generated content: ${contentError.message}`
             );
           }
 
-          generatedImages.push(savedImage);
+          generatedImages.push(savedContent);
           totalImagesGenerated++;
           console.log(
             `✅ Successfully generated and saved image ${totalImagesGenerated}/${bucketImages.length}`
@@ -287,33 +329,45 @@ Deno.serve(async (req) => {
       const startTime = Date.now();
 
       const replicateInput: any = {
-        prompt: project.prompt,
-        aspect_ratio: '1:1',
+        prompt: schedule.prompt,
+        aspect_ratio: generationSettings.aspect_ratio || '1:1',
         output_format: 'png',
         safety_tolerance: 2,
       };
 
-      // Add reference image if provided
-      if (project.reference_image_url) {
-        replicateInput.image = project.reference_image_url;
-        console.log('Using reference image:', project.reference_image_url);
+      // Add reference image if provided in generation settings
+      if (generationSettings.reference_image_url) {
+        replicateInput.image = generationSettings.reference_image_url;
+        console.log(
+          'Using reference image:',
+          generationSettings.reference_image_url
+        );
       }
 
-      const output = await replicate.run('black-forest-labs/flux-kontext-max', {
+      const output = await replicate.run('black-forest-labs/flux-dev', {
         input: replicateInput,
       });
 
       const generationTime = (Date.now() - startTime) / 1000;
       console.log('Image generation completed in', generationTime, 'seconds');
-      console.log('Generated image URL:', output);
+      console.log('Generated image output:', output);
 
-      if (!output || typeof output !== 'string') {
+      // Handle both string and array responses from Replicate
+      let imageUrl: string;
+      if (Array.isArray(output) && output.length > 0) {
+        imageUrl = output[0];
+      } else if (typeof output === 'string') {
+        imageUrl = output;
+      } else {
+        console.error('Unexpected Replicate output format:', output);
         throw new Error('Invalid output from Replicate API');
       }
 
+      console.log('Using image URL:', imageUrl);
+
       // Download and store the image in Supabase storage
-      console.log('Downloading generated image from:', output);
-      const imageResponse = await fetch(output);
+      console.log('Downloading generated image from:', imageUrl);
+      const imageResponse = await fetch(imageUrl);
 
       if (!imageResponse.ok) {
         throw new Error(
@@ -327,9 +381,9 @@ Deno.serve(async (req) => {
       // Create a unique filename with timestamp and project info
       const timestamp = Date.now();
       const filename = generateStoragePath({
-        userId: project.user_id,
-        projectId: project_id,
-        projectType: 'project1',
+        userId: schedule.user_id,
+        projectId: schedule.project_id,
+        projectType: 'image-generation',
         timestamp: timestamp,
       });
 
@@ -358,34 +412,44 @@ Deno.serve(async (req) => {
       const storedImageUrl = publicUrlData.publicUrl;
       console.log('Image stored successfully at:', storedImageUrl);
 
-      // Save generated image to database with storage path
-      console.log('Saving generated image to database...');
-      const { data: savedImage, error: imageError } = await supabase
-        .from('generated_images')
+      // Save generated content to unified table
+      console.log('Saving generated content to database...');
+      const { data: savedContent, error: contentError } = await supabase
+        .from('generated_content')
         .insert([
           {
-            project_id: project_id,
-            generation_job_id: generation_job_id,
-            image_url: storedImageUrl,
-            storage_path: filename,
-            prompt: project.prompt,
-            reference_image_url: project.reference_image_url,
-            model_used: 'flux-kontext-max',
-            aspect_ratio: '1:1',
-            generation_time_seconds: generationTime,
+            user_id: schedule.user_id,
+            project_id: schedule.project_id,
+            schedule_id: schedule_id,
+            project_type: schedule.project_type,
+            content_type: 'image',
+            title: 'AI Generated Image',
+            description: schedule.prompt,
+            content_url: storedImageUrl,
+            generation_status: 'completed',
+            metadata: {
+              prompt: schedule.prompt,
+              storage_path: filename,
+              model_used: 'flux-dev',
+              reference_image_url: generationSettings.reference_image_url,
+              aspect_ratio: generationSettings.aspect_ratio || '1:1',
+              generation_time_seconds: generationTime,
+              output_format: 'png',
+              generation_settings: generationSettings,
+            },
           },
         ])
         .select()
         .single();
 
-      if (imageError) {
-        console.error('Image save error:', imageError);
+      if (contentError) {
+        console.error('Content save error:', contentError);
         throw new Error(
-          `Failed to save generated image: ${imageError.message}`
+          `Failed to save generated content: ${contentError.message}`
         );
       }
 
-      generatedImages.push(savedImage);
+      generatedImages.push(savedContent);
       totalImagesGenerated = 1;
     }
 
@@ -397,8 +461,9 @@ Deno.serve(async (req) => {
       .from('generation_jobs')
       .update({
         status: 'completed',
-        completed_at: new Date().toISOString(),
-        images_generated: totalImagesGenerated,
+        output_metadata: {
+          images_generated: totalImagesGenerated,
+        },
       })
       .eq('id', generation_job_id);
 
@@ -407,16 +472,20 @@ Deno.serve(async (req) => {
       // Don't throw here as the image was generated successfully
     }
 
-    // Update project's last generation timestamp
-    const { error: projectUpdateError } = await supabase
-      .from('projects')
-      .update({
-        last_generation_at: new Date().toISOString(),
-      })
-      .eq('id', project_id);
+    // Update schedule's next run time
+    const scheduleConfig = (schedule.schedule_config as any) || {};
+    const intervalMinutes = scheduleConfig.interval_minutes || 60;
+    const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
 
-    if (projectUpdateError) {
-      console.error('Project update error:', projectUpdateError);
+    const { error: scheduleUpdateError } = await supabase
+      .from('schedules')
+      .update({
+        next_run: nextRun.toISOString(),
+      })
+      .eq('id', schedule_id);
+
+    if (scheduleUpdateError) {
+      console.error('Schedule update error:', scheduleUpdateError);
       // Don't throw here as the image was generated successfully
     }
 
@@ -427,7 +496,7 @@ Deno.serve(async (req) => {
         success: true,
         images_generated: totalImagesGenerated,
         images: generatedImages,
-        bucket_mode: project.use_bucket_images || false,
+        bucket_mode: bucketSettings.use_bucket_images || false,
         job_id: generation_job_id,
       }),
       {
@@ -451,7 +520,6 @@ Deno.serve(async (req) => {
           .update({
             status: 'failed',
             error_message: error.message,
-            completed_at: new Date().toISOString(),
           })
           .eq('id', body.job_id);
       } catch (updateError) {

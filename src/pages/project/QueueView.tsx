@@ -21,32 +21,22 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Clock, Settings, AlertCircle } from 'lucide-react';
+import type { Tables } from '@/integrations/supabase/types';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string | null;
-  prompt: string | null;
-  reference_image_url: string | null;
-  schedule_enabled: boolean;
-  schedule_duration_hours: number;
-  max_images_to_generate: number;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  status: string;
-  created_at: string;
-  updated_at: string;
+type Project = Tables<'projects'>;
+type GenerationJob = Tables<'generation_jobs'>;
+type Schedule = Tables<'schedules'>;
+
+interface ProjectSettings {
+  prompt?: string;
+  reference_image_url?: string;
+  max_images_to_generate?: number;
+  schedule_duration_hours?: number;
+  generation_interval_minutes?: number;
 }
 
-interface GenerationJob {
-  id: string;
-  status: string;
-  scheduled_at: string;
-  started_at: string;
-  completed_at: string;
-  error_message: string;
-  images_generated: number;
+interface GenerationJobWithSchedule extends GenerationJob {
+  schedules?: Schedule;
 }
 
 const QueueView = () => {
@@ -56,7 +46,7 @@ const QueueView = () => {
   }>();
   const { user } = useAuth();
 
-  const [jobs, setJobs] = useState<GenerationJob[]>([]);
+  const [jobs, setJobs] = useState<GenerationJobWithSchedule[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -66,11 +56,32 @@ const QueueView = () => {
 
   const loadJobs = async () => {
     try {
+      // First get all schedules for this project
+      const { data: schedules, error: schedulesError } = await supabase
+        .from('schedules')
+        .select('id')
+        .eq('project_id', project.id);
+
+      if (schedulesError) throw schedulesError;
+
+      if (!schedules || schedules.length === 0) {
+        setJobs([]);
+        setLoading(false);
+        return;
+      }
+
+      // Then get all jobs for these schedules
+      const scheduleIds = schedules.map((s) => s.id);
       const { data: jobsData, error: jobsError } = await supabase
         .from('generation_jobs')
-        .select('*')
-        .eq('project_id', project.id)
-        .order('scheduled_at', { ascending: false })
+        .select(
+          `
+          *,
+          schedules (*)
+        `
+        )
+        .in('schedule_id', scheduleIds)
+        .order('created_at', { ascending: false })
         .limit(50);
 
       if (jobsError) throw jobsError;
@@ -94,7 +105,8 @@ const QueueView = () => {
     );
   }
 
-  const pendingJobs = jobs.filter((job) => job.status === 'pending');
+  const pendingJobs = jobs.filter((job) => job.status === 'queued');
+  const projectSettings = (project.settings as ProjectSettings) || {};
 
   return (
     <div className="space-y-6">
@@ -134,9 +146,14 @@ const QueueView = () => {
                 {jobs.slice(0, 20).map((job) => (
                   <TableRow key={job.id}>
                     <TableCell className="font-medium">
-                      {project?.prompt ? (
-                        <span className="line-clamp-2" title={project.prompt}>
-                          {project.prompt}
+                      {job.schedules?.prompt || projectSettings.prompt ? (
+                        <span
+                          className="line-clamp-2"
+                          title={
+                            job.schedules?.prompt || projectSettings.prompt
+                          }
+                        >
+                          {job.schedules?.prompt || projectSettings.prompt}
                         </span>
                       ) : (
                         'No prompt'
@@ -148,7 +165,7 @@ const QueueView = () => {
                         variant={
                           job.status === 'completed'
                             ? 'default'
-                            : job.status === 'running'
+                            : job.status === 'processing'
                             ? 'secondary'
                             : job.status === 'failed'
                             ? 'destructive'
@@ -161,10 +178,10 @@ const QueueView = () => {
                     <TableCell>
                       <div className="text-sm">
                         <div>
-                          {new Date(job.scheduled_at).toLocaleDateString()}
+                          {new Date(job.created_at || '').toLocaleDateString()}
                         </div>
                         <div className="text-muted-foreground">
-                          {new Date(job.scheduled_at).toLocaleTimeString()}
+                          {new Date(job.created_at || '').toLocaleTimeString()}
                         </div>
                       </div>
                     </TableCell>
@@ -230,7 +247,7 @@ const QueueView = () => {
                   Pending
                 </p>
                 <p className="text-2xl font-bold">
-                  {jobs.filter((j) => j.status === 'pending').length}
+                  {jobs.filter((j) => j.status === 'queued').length}
                 </p>
               </div>
               <div className="h-8 w-8 bg-yellow-100 rounded-lg flex items-center justify-center">
