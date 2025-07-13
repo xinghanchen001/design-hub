@@ -46,19 +46,16 @@ Deno.serve(async (req: Request) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  const REPLICATE_API_TOKEN = Deno.env.get('REPLICATE_API_TOKEN');
-  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
-  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const REPLICATE_API_TOKEN = Deno.env.get('REPLICATE_API_TOKEN')!;
 
-  if (!REPLICATE_API_TOKEN) {
-    throw new Error('REPLICATE_API_TOKEN is not set');
-  }
+  console.log('🔧 Environment check:', {
+    hasSupabaseUrl: !!SUPABASE_URL,
+    hasSupabaseKey: !!SUPABASE_SERVICE_ROLE_KEY,
+    hasReplicateToken: !!REPLICATE_API_TOKEN
+  });
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error('Supabase configuration is missing');
-  }
-
-  // Initialize Supabase client
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
   try {
@@ -247,15 +244,15 @@ Deno.serve(async (req: Request) => {
                 },
                 body: JSON.stringify({
                   version: 'flux-kontext-apps/multi-image-kontext-max',
-                                      input: {
-                      prompt: schedule.prompt,
-                      input_image_1: combination.image1.image_url,
-                      input_image_2: combination.image2.image_url,
-                      aspect_ratio: generationSettings.aspect_ratio || '1:1',
-                      output_format: generationSettings.output_format || 'png',
-                      safety_tolerance: generationSettings.safety_tolerance || 1,
-                      seed: Math.floor(Math.random() * 1000000),
-                    },
+                  input: {
+                    prompt: schedule.prompt,
+                    input_image_1: combination.image1.image_url,
+                    input_image_2: combination.image2.image_url,
+                    aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                    output_format: generationSettings.output_format || 'png',
+                    safety_tolerance: generationSettings.safety_tolerance || 1,
+                    seed: Math.floor(Math.random() * 1000000),
+                  },
                 }),
               }
             );
@@ -324,134 +321,134 @@ Deno.serve(async (req: Request) => {
           console.log(`✅ Successfully processed ${schedule.name}`);
           processedCount++;
         } else {
-        // Use direct URLs from generation settings
-        console.log(
-          `🖼️ Using direct image URLs for schedule ${schedule.name}`
-        );
+          // Use direct URLs from generation settings
+          console.log(
+            `🖼️ Using direct image URLs for schedule ${schedule.name}`
+          );
 
-        const image1Url = generationSettings.input_image_1_url;
-        const image2Url = generationSettings.input_image_2_url;
+          const image1Url = generationSettings.input_image_1_url;
+          const image2Url = generationSettings.input_image_2_url;
 
-        if (!image1Url || !image2Url) {
-          console.log(`⚠️ Missing image URLs for schedule ${schedule.name}`);
-          continue;
-        }
+          if (!image1Url || !image2Url) {
+            console.log(`⚠️ Missing image URLs for schedule ${schedule.name}`);
+            continue;
+          }
 
-        // Call Replicate API
-        const replicateResponse = await fetch(
-          'https://api.replicate.com/v1/predictions',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Token ${REPLICATE_API_TOKEN}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              version: 'flux-kontext-apps/multi-image-kontext-max',
-              input: {
-                prompt: schedule.prompt,
-                input_image_1: image1Url,
-                input_image_2: image2Url,
+          // Call Replicate API
+          const replicateResponse = await fetch(
+            'https://api.replicate.com/v1/predictions',
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Token ${REPLICATE_API_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                version: 'flux-kontext-apps/multi-image-kontext-max',
+                input: {
+                  prompt: schedule.prompt,
+                  input_image_1: image1Url,
+                  input_image_2: image2Url,
+                  aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                  output_format: generationSettings.output_format || 'png',
+                  safety_tolerance: generationSettings.safety_tolerance || 1,
+                  seed: Math.floor(Math.random() * 1000000),
+                },
+              }),
+            }
+          );
+
+          if (!replicateResponse.ok) {
+            console.error(
+              `❌ Replicate API error for schedule ${schedule.name}:`,
+              replicateResponse.status,
+              replicateResponse.statusText
+            );
+            continue;
+          }
+
+          const predictionData = await replicateResponse.json();
+          console.log(`✅ Prediction created:`, predictionData.id);
+
+          // Store the generation record in the database
+          const { error: insertError } = await supabase
+            .from('generated_content')
+            .insert({
+              schedule_id: schedule.id,
+              user_id: schedule.user_id,
+              task_id: schedule.task_id,
+              task_type: schedule.task_type,
+              content_type: 'design',
+              generation_status: 'processing',
+              external_job_id: predictionData.id,
+              metadata: {
+                prediction_id: predictionData.id,
+                input_image_1_url: generationSettings.input_image_1_url,
+                input_image_2_url: generationSettings.input_image_2_url,
                 aspect_ratio: generationSettings.aspect_ratio || '1:1',
                 output_format: generationSettings.output_format || 'png',
                 safety_tolerance: generationSettings.safety_tolerance || 1,
-                seed: Math.floor(Math.random() * 1000000),
+                model_used: 'flux-kontext-apps/multi-image-kontext-max',
+                generation_settings: generationSettings,
               },
-            }),
+            });
+
+          if (insertError) {
+            console.error(`❌ Error inserting content record:`, insertError);
+            throw insertError;
           }
-        );
 
-        if (!replicateResponse.ok) {
-          console.error(
-            `❌ Replicate API error for schedule ${schedule.name}:`,
-            replicateResponse.status,
-            replicateResponse.statusText
-          );
-          continue;
+          // Update the schedule's next run time - SUPPORT BOTH OLD AND NEW FIELD NAMES
+          const intervalMinutes =
+            scheduleConfig.generation_interval_minutes ||
+            scheduleConfig.interval_minutes ||
+            60;
+          const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
+
+          const { error: updateError } = await supabase
+            .from('schedules')
+            .update({ next_run: nextRun.toISOString() })
+            .eq('id', schedule.id);
+
+          if (updateError) {
+            console.error(`❌ Error updating schedule:`, updateError);
+            throw updateError;
+          }
+
+          processedCount++;
+          console.log(`✅ Successfully processed ${schedule.name}`);
+        } catch (error) {
+          console.error(`❌ Error processing schedule ${schedule.name}:`, error);
         }
-
-        const predictionData = await replicateResponse.json();
-        console.log(`✅ Prediction created:`, predictionData.id);
-
-        // Store the generation record in the database
-        const { error: insertError } = await supabase
-          .from('generated_content')
-          .insert({
-            schedule_id: schedule.id,
-            user_id: schedule.user_id,
-            task_id: schedule.task_id,
-            task_type: schedule.task_type,
-            content_type: 'design',
-            generation_status: 'processing',
-            external_job_id: predictionData.id,
-            metadata: {
-              prediction_id: predictionData.id,
-              input_image_1_url: generationSettings.input_image_1_url,
-              input_image_2_url: generationSettings.input_image_2_url,
-              aspect_ratio: generationSettings.aspect_ratio || '1:1',
-              output_format: generationSettings.output_format || 'png',
-              safety_tolerance: generationSettings.safety_tolerance || 1,
-              model_used: 'flux-kontext-apps/multi-image-kontext-max',
-              generation_settings: generationSettings,
-            },
-          });
-
-        if (insertError) {
-          console.error(`❌ Error inserting content record:`, insertError);
-          throw insertError;
-        }
-
-        // Update the schedule's next run time - SUPPORT BOTH OLD AND NEW FIELD NAMES
-        const intervalMinutes =
-          scheduleConfig.generation_interval_minutes ||
-          scheduleConfig.interval_minutes ||
-          60;
-        const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
-
-        const { error: updateError } = await supabase
-          .from('schedules')
-          .update({ next_run: nextRun.toISOString() })
-          .eq('id', schedule.id);
-
-        if (updateError) {
-          console.error(`❌ Error updating schedule:`, updateError);
-          throw updateError;
-        }
-
-        processedCount++;
-        console.log(`✅ Successfully processed ${schedule.name}`);
-      } catch (error) {
-        console.error(`❌ Error processing schedule ${schedule.name}:`, error);
       }
+
+      console.log(
+        `=== Print-on-Shirt Processor completed: ${processedCount}/${schedules.length} schedules processed successfully ===`
+      );
+
+      return new Response(
+        JSON.stringify({
+          message: 'Print-on-shirt schedules processed successfully',
+          processed: processedCount,
+          total: schedules.length,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    } catch (error) {
+      console.error('Error in print-on-shirt-processor-correct function:', error);
+
+      return new Response(
+        JSON.stringify({
+          error: error.message,
+          success: false,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        }
+      );
     }
-
-    console.log(
-      `=== Print-on-Shirt Processor completed: ${processedCount}/${schedules.length} schedules processed successfully ===`
-    );
-
-    return new Response(
-      JSON.stringify({
-        message: 'Print-on-shirt schedules processed successfully',
-        processed: processedCount,
-        total: schedules.length,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
-      }
-    );
-  } catch (error) {
-    console.error('Error in print-on-shirt-processor-correct function:', error);
-
-    return new Response(
-      JSON.stringify({
-        error: error.message,
-        success: false,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      }
-    );
-  }
-});
+  });
