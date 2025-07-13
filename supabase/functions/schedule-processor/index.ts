@@ -64,7 +64,7 @@ serve(async (req) => {
     for (const schedule of schedules) {
       try {
         console.log(
-          `Processing schedule ${schedule.id} (${schedule.name}) for project type: ${schedule.project_type}`
+          `Processing schedule ${schedule.id} (${schedule.name}) for task type: ${schedule.task_type}`
         );
 
         // Create a generation job for this schedule
@@ -74,7 +74,7 @@ serve(async (req) => {
             {
               schedule_id: schedule.id,
               user_id: schedule.user_id,
-              project_type: schedule.project_type,
+              task_type: schedule.task_type,
               job_type: 'single',
               status: 'queued',
               created_at: new Date().toISOString(),
@@ -96,11 +96,11 @@ serve(async (req) => {
           continue;
         }
 
-        // Call the appropriate function based on project type
+        // Call the appropriate function based on task type
         let generateResult;
         let generateError;
 
-        if (schedule.project_type === 'image-generation') {
+        if (schedule.task_type === 'image-generation') {
           // Call the generate-image function
           const result = await supabase.functions.invoke('generate-image', {
             body: {
@@ -111,7 +111,7 @@ serve(async (req) => {
           });
           generateResult = result.data;
           generateError = result.error;
-        } else if (schedule.project_type === 'print-on-shirt') {
+        } else if (schedule.task_type === 'print-on-shirt') {
           // Call the print-on-shirt processor function
           const result = await supabase.functions.invoke(
             'print-on-shirt-processor-correct',
@@ -125,7 +125,7 @@ serve(async (req) => {
           );
           generateResult = result.data;
           generateError = result.error;
-        } else if (schedule.project_type === 'journal') {
+        } else if (schedule.task_type === 'journal') {
           // For journal, we'll handle it differently since it doesn't generate images
           console.log(
             `Journal processing not applicable for schedule ${schedule.id}`
@@ -135,10 +135,10 @@ serve(async (req) => {
             error: 'Journal processing not applicable in schedule processor',
           };
         } else {
-          console.log(`Unknown project type: ${schedule.project_type}`);
+          console.log(`Unknown task type: ${schedule.task_type}`);
           generateResult = {
             success: false,
-            error: `Unknown project type: ${schedule.project_type}`,
+            error: `Unknown task type: ${schedule.task_type}`,
           };
         }
 
@@ -157,7 +157,8 @@ serve(async (req) => {
 
           // Update schedule's next run time
           const scheduleConfig = (schedule.schedule_config as any) || {};
-          const intervalMinutes = scheduleConfig.interval_minutes || 60;
+          const intervalMinutes =
+            scheduleConfig.generation_interval_minutes || 60;
           const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
 
           await supabase

@@ -40,8 +40,9 @@ interface GenerationJobWithSchedule extends GenerationJob {
 }
 
 const QueueView = () => {
-  const { project } = useOutletContext<{
+  const { project, tasks } = useOutletContext<{
     project: Project;
+    tasks: any[];
     fetchProjectData: () => Promise<void>;
   }>();
   const { user } = useAuth();
@@ -50,17 +51,26 @@ const QueueView = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !project) return;
+    if (!user || !project || !tasks) return;
     loadJobs();
-  }, [user, project]);
+  }, [user, project, tasks]);
 
   const loadJobs = async () => {
     try {
-      // First get all schedules for this project
+      // Get task IDs for this project
+      const projectTaskIds = tasks?.map((task) => task.id) || [];
+
+      if (projectTaskIds.length === 0) {
+        setJobs([]);
+        setLoading(false);
+        return;
+      }
+
+      // Get all schedules for these tasks
       const { data: schedules, error: schedulesError } = await supabase
         .from('schedules')
         .select('id')
-        .eq('project_id', project.id);
+        .in('task_id', projectTaskIds);
 
       if (schedulesError) throw schedulesError;
 

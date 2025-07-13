@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
@@ -12,133 +12,46 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
-import { Upload, ArrowLeft, Bot, X, Image } from 'lucide-react';
+import { ArrowLeft, Bot, Folder, Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 const CreateProject = () => {
   const [loading, setLoading] = useState(false);
-  const [referenceImage, setReferenceImage] = useState<File | null>(null);
-  const [referenceImagePreview, setReferenceImagePreview] = useState<
-    string | null
-  >(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
-  const [referenceMode, setReferenceMode] = useState<'upload'>('upload');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    prompt: '',
-    schedule_enabled: true,
-    schedule_duration_hours: 8,
-    max_images_to_generate: 100,
-    generation_interval_minutes: 60,
-    reference_image_url: '',
-    project_type: 'image-generation' as
-      | 'image-generation'
-      | 'print-on-shirt'
-      | 'journal',
   });
 
   const { user } = useAuth();
   const navigate = useNavigate();
-
-  const handleReferenceImageChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      if (!validTypes.includes(file.type)) {
-        toast.error('Please upload a JPEG, PNG, GIF, or WebP image');
-        return;
-      }
-
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('Image size must be less than 10MB');
-        return;
-      }
-
-      setReferenceImage(file);
-
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setReferenceImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeReferenceImage = () => {
-    setReferenceImage(null);
-    setReferenceImagePreview(null);
-    setFormData((prev) => ({ ...prev, reference_image_url: '' }));
-  };
-
-  const uploadReferenceImage = async (): Promise<string | null> => {
-    if (!referenceImage || !user) return null;
-
-    setUploadingImage(true);
-    try {
-      const fileExt = referenceImage.name.split('.').pop();
-      const fileName = `${user.id}/${Date.now()}_reference.${fileExt}`;
-
-      const { data, error } = await supabase.storage
-        .from('user-images')
-        .upload(fileName, referenceImage);
-
-      if (error) throw error;
-
-      const { data: urlData } = supabase.storage
-        .from('user-images')
-        .getPublicUrl(fileName);
-
-      return urlData.publicUrl;
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to upload reference image');
-      return null;
-    } finally {
-      setUploadingImage(false);
-    }
-  };
+  const submittingRef = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
+    // Prevent multiple submissions
+    if (loading || submittingRef.current) {
+      console.log('Submission already in progress, ignoring');
+      return;
+    }
+
+    if (!formData.name.trim()) {
+      toast.error('Please enter a project name');
+      return;
+    }
+
+    submittingRef.current = true;
     setLoading(true);
+
     try {
-      let referenceImageUrl = '';
-
-      // Handle reference image upload
-      if (referenceImage) {
-        const uploadedUrl = await uploadReferenceImage();
-        if (uploadedUrl) {
-          referenceImageUrl = uploadedUrl;
-        }
-      }
-
-      // First, create the project with the new schema
+      // Create the project (simple container)
       const projectData = {
-        name: formData.name,
-        description: formData.description,
-        project_type: formData.project_type,
+        name: formData.name.trim(),
+        description: formData.description.trim() || null,
         user_id: user.id,
-        status: 'active' as const,
-        settings: {
-          prompt: formData.prompt,
-          reference_image_url: referenceImageUrl,
-          max_images_to_generate: formData.max_images_to_generate,
-          schedule_duration_hours: formData.schedule_duration_hours,
-          generation_interval_minutes: formData.generation_interval_minutes,
-        },
       };
 
       const { data: project, error: projectError } = await supabase
@@ -149,376 +62,207 @@ const CreateProject = () => {
 
       if (projectError) throw projectError;
 
-      // If schedule is enabled, create a schedule entry
-      if (formData.schedule_enabled && project) {
-        const scheduleData = {
+      // Create 3 default tasks for the project
+      const defaultTasks = [
+        {
+          name: 'Image Generation',
+          description:
+            'AI-powered image generation with custom prompts and styles',
+          task_type: 'image-generation' as const,
           project_id: project.id,
           user_id: user.id,
-          project_type: formData.project_type,
-          name: `${formData.name} Schedule`,
-          description: `Auto-generated schedule for ${formData.name}`,
-          prompt: formData.prompt,
-          schedule_config: {
-            enabled: true,
-            duration_hours: formData.schedule_duration_hours,
-            interval_minutes: formData.generation_interval_minutes,
+          status: 'paused' as const,
+          settings: {
+            model: 'flux-dev',
+            prompt: '',
+            style: 'photographic',
+            aspect_ratio: '1:1',
+            max_images: 4,
           },
-          generation_settings: {
-            max_images: formData.max_images_to_generate,
-            reference_image_url: referenceImageUrl,
+        },
+        {
+          name: 'Print on Shirt',
+          description: 'Create custom shirt designs and mockups',
+          task_type: 'print-on-shirt' as const,
+          project_id: project.id,
+          user_id: user.id,
+          status: 'paused' as const,
+          settings: {
+            shirt_style: 't-shirt',
+            design_placement: 'center',
+            print_method: 'dtg',
           },
-          bucket_settings: {},
-          status: 'active' as const,
-          next_run: new Date().toISOString(), // Set next_run to now so schedule starts immediately
-        };
+        },
+        {
+          name: 'Journal Blog Post',
+          description: 'Generate engaging blog content and journal entries',
+          task_type: 'journal' as const,
+          project_id: project.id,
+          user_id: user.id,
+          status: 'paused' as const,
+          settings: {
+            tone: 'informative',
+            length: 'medium',
+            style: 'blog',
+          },
+        },
+      ];
 
-        const { error: scheduleError } = await supabase
-          .from('schedules')
-          .insert([scheduleData]);
+      const { error: tasksError } = await supabase
+        .from('tasks')
+        .insert(defaultTasks);
 
-        if (scheduleError) {
-          console.error('Schedule creation error:', scheduleError);
-          // Don't fail the whole operation if schedule creation fails
-          toast.warning('Project created but schedule creation failed');
-        }
-      }
+      if (tasksError) throw tasksError;
 
-      toast.success('AI Agent created successfully!');
+      toast.success('Project created successfully with 3 AI tasks!');
       navigate(`/project/${project.id}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Project creation error:', error);
-      toast.error(error.message || 'Failed to create project');
+      toast.error(
+        error instanceof Error ? error.message : 'Failed to create project'
+      );
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
-      {/* Header */}
-      <header className="border-b border-border/50 bg-card/80 backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4 flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigate('/')}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Dashboard
-          </Button>
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-gradient-primary">
-              <Bot className="h-6 w-6 text-primary-foreground" />
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-2xl mx-auto space-y-8">
+          {/* Header */}
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate('/')}
+              className="flex items-center gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold">Create New Project</h1>
+              <p className="text-muted-foreground">
+                Create a project to organize your AI tasks and workflows
+              </p>
             </div>
-            <h1 className="text-xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-              Create AI Agent
-            </h1>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="max-w-2xl mx-auto">
-          <div className="text-center space-y-4 mb-8">
-            <h2 className="text-3xl font-bold text-foreground">
-              Set Up Your
-              <span className="bg-gradient-accent bg-clip-text text-transparent">
-                {' '}
-                AI Image Agent
-              </span>
-            </h2>
-            <p className="text-muted-foreground">
-              Configure your automated image generation agent with custom
-              prompts, schedules, and limits.
-            </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Basic Information */}
-            <Card className="shadow-card border-border/50">
-              <CardHeader>
-                <CardTitle>Basic Information</CardTitle>
-                <CardDescription>
-                  Give your AI agent a name and description
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+          {/* Form */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/10">
+                  <Folder className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <CardTitle>Project Details</CardTitle>
+                  <CardDescription>
+                    Enter basic information for your new project
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Agent Name *</Label>
+                  <Label htmlFor="name">Project Name *</Label>
                   <Input
                     id="name"
-                    placeholder="e.g., Product Photography Agent"
                     value={formData.name}
                     onChange={(e) =>
-                      setFormData((prev) => ({ ...prev, name: e.target.value }))
+                      setFormData({ ...formData, name: e.target.value })
                     }
+                    placeholder="e.g., Marketing Campaign 2024"
                     required
                   />
+                  <p className="text-sm text-muted-foreground">
+                    Choose a descriptive name for your project
+                  </p>
                 </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="description">Description</Label>
                   <Textarea
                     id="description"
-                    placeholder="Describe what your AI agent will create..."
                     value={formData.description}
                     onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
+                      setFormData({ ...formData, description: e.target.value })
                     }
-                    rows={3}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Prompt Configuration */}
-            <Card className="shadow-card border-border/50">
-              <CardHeader>
-                <CardTitle>Prompt Configuration</CardTitle>
-                <CardDescription>
-                  Define what your AI agent will generate
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="prompt">Generation Prompt *</Label>
-                  <Textarea
-                    id="prompt"
-                    placeholder="A professional product photo of a [product] on a clean white background, studio lighting, high quality, detailed..."
-                    value={formData.prompt}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        prompt: e.target.value,
-                      }))
-                    }
+                    placeholder="Describe what this project is for..."
                     rows={4}
-                    required
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Tip: Use detailed descriptions for better results. You can
-                    upload a reference image below.
+                  <p className="text-sm text-muted-foreground">
+                    Optional description to help you remember the project's
+                    purpose
                   </p>
                 </div>
-              </CardContent>
-            </Card>
 
-            {/* Reference Image Upload */}
-            <Card className="shadow-card border-border/50">
-              <CardHeader>
-                <CardTitle>Reference Image (Optional)</CardTitle>
-                <CardDescription>
-                  Upload a reference image to guide the AI generation, or select
-                  from your bucket.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-4">
-                  {!referenceImagePreview ? (
-                    <div className="border-2 border-dashed border-border rounded-lg p-8">
-                      <div className="flex flex-col items-center justify-center space-y-4">
-                        <div className="p-4 rounded-full bg-muted">
-                          <Upload className="h-8 w-8 text-muted-foreground" />
-                        </div>
-                        <div className="text-center space-y-2">
-                          <h3 className="font-medium">
-                            Upload Reference Image
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                            Drag and drop or click to upload
-                            <br />
-                            JPEG, PNG, GIF, or WebP (max 10MB)
-                          </p>
-                        </div>
-                        <Label
-                          htmlFor="reference-image"
-                          className="cursor-pointer"
-                        >
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="pointer-events-none"
-                          >
-                            <Image className="h-4 w-4 mr-2" />
-                            Choose Image
-                          </Button>
-                          <Input
-                            id="reference-image"
-                            type="file"
-                            accept="image/jpeg,image/png,image/gif,image/webp"
-                            onChange={handleReferenceImageChange}
-                            className="hidden"
-                          />
-                        </Label>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="relative">
-                        <img
-                          src={referenceImagePreview}
-                          alt="Reference preview"
-                          className="w-full max-h-64 object-contain rounded-lg border"
-                        />
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          className="absolute top-2 right-2"
-                          onClick={removeReferenceImage}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Image className="h-4 w-4" />
-                        <span>{referenceImage?.name}</span>
-                        <span>
-                          (
-                          {(
-                            (referenceImage?.size || 0) /
-                            (1024 * 1024)
-                          ).toFixed(2)}{' '}
-                          MB)
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p>
-                    <strong>Tips for reference images:</strong>
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li>Use high-quality images for better results</li>
-                    <li>
-                      The AI will maintain similar style, composition, or colors
-                    </li>
-                    <li>Works great for style transfer and object editing</li>
-                    <li>
-                      You can edit or enhance the reference image with text
-                      prompts
-                    </li>
-                    <li>
-                      After creating your project, you can upload multiple
-                      images to your project's bucket for batch generation
-                    </li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Generation Limits */}
-            <Card className="shadow-card border-border/50">
-              <CardHeader>
-                <CardTitle>Generation Limits</CardTitle>
-                <CardDescription>
-                  Set limits to control costs and usage
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="max_images">Maximum Images</Label>
-                    <Input
-                      id="max_images"
-                      type="number"
-                      min="1"
-                      max="1000"
-                      value={formData.max_images_to_generate}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          max_images_to_generate: parseInt(e.target.value) || 0,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="schedule_duration">
-                      Schedule Duration (hours)
-                    </Label>
-                    <Select
-                      value={formData.schedule_duration_hours.toString()}
-                      onValueChange={(value) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          schedule_duration_hours: parseInt(value),
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 hour</SelectItem>
-                        <SelectItem value="2">2 hours</SelectItem>
-                        <SelectItem value="4">4 hours</SelectItem>
-                        <SelectItem value="6">6 hours</SelectItem>
-                        <SelectItem value="8">8 hours</SelectItem>
-                        <SelectItem value="12">12 hours</SelectItem>
-                        <SelectItem value="24">24 hours</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="interval">
-                    Generation Interval (minutes)
-                  </Label>
-                  <Select
-                    value={formData.generation_interval_minutes.toString()}
-                    onValueChange={(value) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        generation_interval_minutes: parseInt(value),
-                      }))
-                    }
+                <div className="flex gap-4 pt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => navigate('/')}
+                    className="flex-1"
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="1">Every 1 minute</SelectItem>
-                      <SelectItem value="5">Every 5 minutes</SelectItem>
-                      <SelectItem value="10">Every 10 minutes</SelectItem>
-                      <SelectItem value="15">Every 15 minutes</SelectItem>
-                      <SelectItem value="30">Every 30 minutes</SelectItem>
-                      <SelectItem value="60">Every hour</SelectItem>
-                      <SelectItem value="120">Every 2 hours</SelectItem>
-                      <SelectItem value="360">Every 6 hours</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={loading || !formData.name.trim()}
+                    className="flex-1 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                  >
+                    {loading ? (
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Creating...
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        Create Project
+                      </div>
+                    )}
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
+              </form>
+            </CardContent>
+          </Card>
 
-            {/* Submit Button */}
-            <div className="flex gap-4 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigate('/')}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={loading || !formData.name || !formData.prompt}
-                className="flex-1 bg-gradient-primary hover:shadow-glow"
-              >
-                {loading ? 'Creating...' : 'Create AI Agent'}
-              </Button>
-            </div>
-          </form>
+          {/* Next Steps Info */}
+          <Card className="border-dashed">
+            <CardContent className="pt-6">
+              <div className="text-center space-y-4">
+                <div className="p-3 rounded-full bg-primary/10 mx-auto w-fit">
+                  <Bot className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold mb-2">What's included?</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Your project will automatically include 3 AI-powered tasks:
+                  </p>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <span>Image Generation - Create stunning AI artwork</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span>Print on Shirt - Design custom apparel</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                      <span>Journal Blog Post - Generate written content</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </main>
+      </div>
     </div>
   );
 };

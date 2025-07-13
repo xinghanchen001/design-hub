@@ -8,6 +8,7 @@ import { AuthProvider } from '@/components/AuthProvider';
 import Index from './pages/Index';
 import Auth from './pages/Auth';
 import CreateProject from './pages/CreateProject';
+import CreateImageAgent from './pages/CreateImageAgent';
 import {
   ProjectLayout,
   DashboardView,
@@ -37,6 +38,10 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
               <Route path="/create-project" element={<CreateProject />} />
+              <Route
+                path="/create-image-agent"
+                element={<CreateImageAgent />}
+              />
 
               {/* Project nested routes */}
               <Route path="/project/:projectId" element={<ProjectLayout />}>

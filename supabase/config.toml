@@ -1,4 +1,4 @@
-project_id = "sphgdlqoabzsyhtyopim"
+project_id = "pwysjzyhhyfxhbymmklz"
 
 [functions.generate-image]
 verify_jwt = false
@@ -9,11 +9,11 @@ verify_jwt = false
 [functions.generate-multi-image]
 verify_jwt = false
 
-[functions.print-on-shirt-processor]
+[functions.print-on-shirt-processor-correct]
 verify_jwt = false
 
-[functions.process-print-on-shirt]
+[functions.process-completed-predictions]
 verify_jwt = false
 
-[functions.test-replicate-no-auth]
+[functions.journal-blog-post]
 verify_jwt = false

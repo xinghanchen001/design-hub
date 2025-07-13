@@ -41,12 +41,13 @@ interface ScheduleWithJobs extends Schedule {
 }
 
 interface GeneratedContentWithProject extends GeneratedContent {
-  schedules?: { name: string; project_type: string };
+  schedules?: { name: string; task_type: string };
 }
 
 const DashboardView = () => {
-  const { project, fetchProjectData } = useOutletContext<{
+  const { project, tasks, fetchProjectData } = useOutletContext<{
     project: Project;
+    tasks: any[];
     fetchProjectData: () => Promise<void>;
   }>();
   const { user } = useAuth();
@@ -58,9 +59,9 @@ const DashboardView = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!user || !project) return;
+    if (!user || !project || !tasks) return;
     loadDashboardData();
-  }, [user, project]);
+  }, [user, project, tasks]);
 
   const loadDashboardData = async () => {
     try {
@@ -81,8 +82,11 @@ const DashboardView = () => {
       setUserSchedules(allSchedulesData || []);
 
       // Get schedules for this project to fetch their jobs
+      // Use tasks to get task IDs for this project
+      const projectTaskIds = tasks?.map((task) => task.id) || [];
       const projectSchedules =
-        allSchedulesData?.filter((s) => s.project_id === project.id) || [];
+        allSchedulesData?.filter((s) => projectTaskIds.includes(s.task_id)) ||
+        [];
       const allJobs = projectSchedules.flatMap((s) => s.generation_jobs || []);
       setJobs(allJobs.slice(0, 10)); // Limit to 10 most recent
 
@@ -94,7 +98,7 @@ const DashboardView = () => {
           *,
           schedules:schedule_id (
             name,
-            project_type
+            task_type
           )
         `
         )
@@ -116,14 +120,15 @@ const DashboardView = () => {
   };
 
   const toggleSchedule = async () => {
-    if (!project) return;
+    if (!project || !tasks?.length) return;
 
     try {
-      // Get the first schedule for this project
+      // Get the first schedule for this project's tasks
+      const projectTaskIds = tasks.map((task) => task.id);
       const { data: schedules, error: fetchError } = await supabase
         .from('schedules')
         .select('*')
-        .eq('project_id', project.id)
+        .in('task_id', projectTaskIds)
         .limit(1);
 
       if (fetchError) throw fetchError;
@@ -269,8 +274,10 @@ const DashboardView = () => {
                   .map((activeSchedule) => {
                     const scheduleConfig =
                       (activeSchedule.schedule_config as any) || {};
-                    const isCurrentProject =
-                      activeSchedule.project_id === project.id;
+                    const projectTaskIds = tasks?.map((task) => task.id) || [];
+                    const isCurrentProject = projectTaskIds.includes(
+                      activeSchedule.task_id
+                    );
 
                     return (
                       <div
@@ -338,8 +345,9 @@ const DashboardView = () => {
           <CardContent className="space-y-3">
             <Button
               onClick={() => {
-                const hasSchedule = userSchedules.some(
-                  (s) => s.project_id === project.id
+                const projectTaskIds = tasks?.map((task) => task.id) || [];
+                const hasSchedule = userSchedules.some((s) =>
+                  projectTaskIds.includes(s.task_id)
                 );
                 if (hasSchedule) {
                   toggleSchedule();
@@ -351,9 +359,14 @@ const DashboardView = () => {
               variant="outline"
             >
               <Plus className="mr-2 h-4 w-4" />
-              {userSchedules.some((s) => s.project_id === project.id)
-                ? 'Toggle Schedule'
-                : 'Create New Schedule'}
+              {(() => {
+                const projectTaskIds = tasks?.map((task) => task.id) || [];
+                return userSchedules.some((s) =>
+                  projectTaskIds.includes(s.task_id)
+                )
+                  ? 'Toggle Schedule'
+                  : 'Create New Schedule';
+              })()}
             </Button>
             <Button
               onClick={() => navigate('images')}

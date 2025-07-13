@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
-import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -9,30 +8,50 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import {
   Bot,
-  Sparkles,
-  Zap,
-  Clock,
-  Image,
-  Settings,
-  TrendingUp,
   Activity,
+  Plus,
+  Image,
+  Shirt,
+  FileText,
+  Calendar,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 
+interface Project {
+  id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  task_count?: number;
+  active_schedules?: number;
+}
+
 interface Activity {
-  type: string;
-  message: string;
-  time: string;
-  color: string;
+  id: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  type: 'generation' | 'schedule' | 'project';
+  project_name?: string;
 }
 
 const Index = () => {
   const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
+  const [projects, setProjects] = useState<Project[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [checkingProjects, setCheckingProjects] = useState(true);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [loadingActivities, setLoadingActivities] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -42,54 +61,89 @@ const Index = () => {
 
   useEffect(() => {
     if (user) {
-      checkForExistingProjects();
+      fetchProjects();
+      fetchRecentActivities();
     }
   }, [user]);
 
-  const checkForExistingProjects = async () => {
+  const fetchProjects = async () => {
     try {
-      const { data: projects, error } = await supabase
+      // Fetch projects and their task counts
+      const { data: projectsData, error: projectsError } = await supabase
         .from('projects')
-        .select('id')
+        .select(
+          `
+          id,
+          name,
+          description,
+          created_at,
+          updated_at
+        `
+        )
         .eq('user_id', user.id)
-        .limit(1);
+        .order('updated_at', { ascending: false });
 
-      if (error) throw error;
+      if (projectsError) throw projectsError;
 
-      // If user has projects, redirect to the first project's dashboard
-      if (projects && projects.length > 0) {
-        navigate(`/project/${projects[0].id}`);
-        return;
-      }
+      // For each project, get task counts and active schedules
+      const projectsWithCounts = await Promise.all(
+        (projectsData || []).map(async (project) => {
+          const { count: taskCount } = await supabase
+            .from('tasks')
+            .select('*', { count: 'exact', head: true })
+            .eq('project_id', project.id);
 
-      // If no projects, fetch activities and show landing page
-      fetchRecentActivities();
-    } catch (error) {
-      console.error('Error checking for projects:', error);
-      // Fallback to landing page
-      fetchRecentActivities();
+          // Get tasks for this project to query schedules
+          const { data: projectTasks } = await supabase
+            .from('tasks')
+            .select('id')
+            .eq('project_id', project.id);
+
+          const taskIds = projectTasks?.map((task) => task.id) || [];
+
+          let scheduleCount = 0;
+          if (taskIds.length > 0) {
+            const { count } = await supabase
+              .from('schedules')
+              .select('*', { count: 'exact', head: true })
+              .in('task_id', taskIds)
+              .eq('status', 'active');
+            scheduleCount = count || 0;
+          }
+
+          return {
+            ...project,
+            task_count: taskCount || 0,
+            active_schedules: scheduleCount,
+          };
+        })
+      );
+
+      setProjects(projectsWithCounts);
+    } catch (error: any) {
+      console.error('Error fetching projects:', error);
+      toast.error('Failed to load projects');
     } finally {
-      setCheckingProjects(false);
+      setLoadingProjects(false);
     }
   };
 
   const fetchRecentActivities = async () => {
     try {
-      // First check if the user exists
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('generation_jobs')
+      // Fetch recent generated content with project info
+      const { data: recentContent, error } = await supabase
+        .from('generated_content')
         .select(
           `
-          *,
-          schedules!inner(
+          id,
+          title,
+          content_type,
+          created_at,
+          task_id,
+          tasks!inner(
             name,
             project_id,
-            projects!inner(
-              name,
-              user_id
-            )
+            projects!inner(name)
           )
         `
         )
@@ -97,400 +151,224 @@ const Index = () => {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (error) {
-        console.error('Error fetching activities:', error);
-        // Don't throw, just log and return empty activities
-        setActivities([]);
-        return;
-      }
+      if (error) throw error;
 
-      if (!data || data.length === 0) {
-        setActivities([]);
-        return;
-      }
+      const activities: Activity[] = (recentContent || []).map(
+        (content: any) => ({
+          id: content.id,
+          title: content.title || `New ${content.content_type}`,
+          description: `Generated in ${content.tasks.name}`,
+          timestamp: content.created_at,
+          type: 'generation' as const,
+          project_name: content.tasks.projects.name,
+        })
+      );
 
-      const formattedActivities: Activity[] = data.map((job: any) => {
-        const timeAgo = getTimeAgo(new Date(job.created_at));
-        const projectName = job.schedules?.projects?.name || 'Unknown Project';
-
-        switch (job.status) {
-          case 'completed':
-            return {
-              type: 'success',
-              message: `Successfully generated image for "${projectName}"`,
-              time: timeAgo,
-              color: 'bg-brand-primary',
-            };
-          case 'failed':
-            return {
-              type: 'error',
-              message:
-                job.error_message ||
-                `Failed to generate image for "${projectName}"`,
-              time: timeAgo,
-              color: 'bg-destructive',
-            };
-          case 'processing':
-            return {
-              type: 'info',
-              message: `Generating image for "${projectName}"`,
-              time: timeAgo,
-              color: 'bg-brand-secondary',
-            };
-          case 'queued':
-            return {
-              type: 'info',
-              message: `Scheduled generation added to queue for "${projectName}"`,
-              time: timeAgo,
-              color: 'bg-brand-primary',
-            };
-          default:
-            return {
-              type: 'info',
-              message: `Job created for "${projectName}"`,
-              time: timeAgo,
-              color: 'bg-brand-neutral',
-            };
-        }
-      });
-
-      setActivities(formattedActivities);
-    } catch (error) {
+      setActivities(activities);
+    } catch (error: any) {
       console.error('Error fetching activities:', error);
-      setActivities([]);
+    } finally {
+      setLoadingActivities(false);
     }
   };
 
-  const getTimeAgo = (date: Date): string => {
-    const now = new Date();
-    const diffInMinutes = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60)
-    );
-
-    if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60)
-      return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
-
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24)
-      return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
-
-    const diffInDays = Math.floor(diffInHours / 24);
-    return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+  const getTaskTypeIcon = (taskCount: number) => {
+    if (taskCount === 0) return <Plus className="h-4 w-4" />;
+    return <Bot className="h-4 w-4" />;
   };
 
-  if (loading || checkingProjects) {
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  if (loading || loadingProjects) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-subtle">
         <div className="text-center space-y-4">
-          <div className="p-4 rounded-full bg-gradient-primary shadow-glow mx-auto w-fit">
-            <Bot className="h-12 w-12 text-white animate-pulse" />
-          </div>
-          <p className="text-brand-neutral font-medium">
-            {loading
-              ? 'Loading your AI workspace...'
-              : 'Checking your projects...'}
-          </p>
+          <Bot className="h-12 w-12 text-primary mx-auto animate-pulse" />
+          <p className="text-muted-foreground">Loading Design Hub...</p>
         </div>
       </div>
     );
   }
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
       {/* Header */}
-      <header className="border-b border-brand-accent/50 bg-white/80 backdrop-blur-sm shadow-card">
+      <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-primary shadow-warm">
-              <Bot className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                AI Image Agent
+            <div className="flex items-center gap-2">
+              <Bot className="h-8 w-8 text-primary" />
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+                Design Hub
               </h1>
-              <p className="text-xs text-brand-neutral">
-                Powered by Tryprofound
-              </p>
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-medium text-brand-neutral">
-                Welcome back
-              </p>
-              <p className="text-xs text-brand-neutral/70">{user.email}</p>
-            </div>
             <Button
-              onClick={signOut}
+              onClick={() => navigate('/create-project')}
               variant="outline"
-              size="sm"
-              className="border-brand-primary/20 hover:bg-brand-accent hover:border-brand-primary"
             >
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Button>
+            <ThemeToggle />
+            <Button variant="outline" onClick={signOut}>
               Sign Out
             </Button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="space-y-8">
-          {/* Dashboard Header */}
+      <main className="container mx-auto px-4 py-8 space-y-8">
+        {/* Welcome Section */}
+        <div className="text-center space-y-4">
+          <h2 className="text-3xl font-bold">Welcome back!</h2>
+          <p className="text-muted-foreground max-w-2xl mx-auto">
+            Manage your AI-powered design projects. Each project contains image
+            generation, print-on-shirt, and journal tasks with their own
+            schedules and content buckets.
+          </p>
+        </div>
+
+        {/* Projects Grid */}
+        <section className="space-y-6">
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-                Dashboard
-              </h2>
-              <p className="text-brand-neutral mt-1">
-                Monitor your AI image generation tasks and schedules
-              </p>
-            </div>
-            <Button
-              onClick={() => navigate('/create-project')}
-              className="bg-gradient-primary hover:shadow-glow transition-all duration-300 text-white border-0"
-            >
-              <Bot className="h-4 w-4 mr-2" />
-              Create Schedule
-            </Button>
+            <h3 className="text-2xl font-semibold">Your Projects</h3>
+            {projects.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => navigate('/create-project')}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Project
+              </Button>
+            )}
           </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <Card className="shadow-card border-brand-accent/50 hover:shadow-warm transition-all duration-300 bg-white/90">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-full bg-gradient-primary shadow-glow">
-                    <Bot className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-brand-neutral/70 font-medium">
-                      Active Schedules
-                    </p>
-                    <p className="text-2xl font-bold text-brand-neutral">0</p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <TrendingUp className="h-3 w-3 text-brand-primary" />
-                      <p className="text-xs text-brand-primary font-medium">
-                        12% from last week
-                      </p>
-                    </div>
-                  </div>
+          {projects.length === 0 ? (
+            <Card className="text-center py-12">
+              <CardContent className="space-y-4">
+                <Bot className="h-16 w-16 text-muted-foreground mx-auto" />
+                <div className="space-y-2">
+                  <h3 className="text-xl font-semibold">No projects yet</h3>
+                  <p className="text-muted-foreground">
+                    Create your first project to start generating amazing
+                    designs with AI.
+                    <br />
+                    Each project includes image generation, print-on-shirt, and
+                    journal tasks.
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-card border-brand-accent/50 hover:shadow-warm transition-all duration-300 bg-white/90">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-full bg-gradient-warm shadow-warm">
-                    <Image className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-brand-neutral/70 font-medium">
-                      Images Generated
-                    </p>
-                    <p className="text-2xl font-bold text-brand-neutral">0</p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <TrendingUp className="h-3 w-3 text-brand-secondary" />
-                      <p className="text-xs text-brand-secondary font-medium">
-                        24% from last week
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-card border-brand-accent/50 hover:shadow-warm transition-all duration-300 bg-white/90">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-full bg-gradient-primary shadow-glow">
-                    <Clock className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-brand-neutral/70 font-medium">
-                      Queue Status
-                    </p>
-                    <p className="text-2xl font-bold text-brand-neutral">0</p>
-                    <p className="text-xs text-brand-neutral/70">
-                      pending generation
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-card border-brand-accent/50 hover:shadow-warm transition-all duration-300 bg-white/90">
-              <CardContent className="p-6">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 rounded-full bg-gradient-warm shadow-warm">
-                    <Zap className="h-6 w-6 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-brand-neutral/70 font-medium">
-                      Success Rate
-                    </p>
-                    <p className="text-2xl font-bold text-brand-neutral">
-                      100%
-                    </p>
-                    <div className="flex items-center gap-1 mt-1">
-                      <TrendingUp className="h-3 w-3 text-brand-primary" />
-                      <p className="text-xs text-brand-primary font-medium">
-                        0.8% from last week
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Active Schedules */}
-            <div className="lg:col-span-2">
-              <Card className="shadow-card border-brand-accent/50 bg-white/90">
-                <CardHeader className="flex flex-row items-center justify-between border-b border-brand-accent/30">
-                  <CardTitle className="text-brand-neutral">
-                    Active Schedules
-                  </CardTitle>
+                <div className="flex justify-center">
                   <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-brand-primary/20 hover:bg-brand-accent text-brand-primary"
+                    onClick={() => navigate('/create-project')}
+                    className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
                   >
-                    View All
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Your First Project
                   </Button>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center py-12">
-                    <div className="p-4 rounded-full bg-brand-accent mx-auto w-fit mb-4">
-                      <Bot className="h-12 w-12 text-brand-neutral/50" />
-                    </div>
-                    <p className="text-brand-neutral font-medium mb-2">
-                      No active schedules
-                    </p>
-                    <p className="text-sm text-brand-neutral/70">
-                      Create your first schedule to get started
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Quick Actions */}
-            <Card className="shadow-card border-brand-accent/50 bg-white/90">
-              <CardHeader className="border-b border-brand-accent/30">
-                <CardTitle className="text-brand-neutral">
-                  Quick Actions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 pt-6">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start border-brand-primary/20 hover:bg-brand-accent hover:border-brand-primary text-brand-neutral"
-                  onClick={() => navigate('/create-project')}
-                >
-                  <Bot className="h-4 w-4 mr-2" />
-                  Create Schedule
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start border-brand-secondary/20 hover:bg-brand-cream text-brand-neutral"
-                >
-                  <Zap className="h-4 w-4 mr-2" />
-                  Generate Now
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start border-brand-primary/20 hover:bg-brand-accent text-brand-neutral"
-                >
-                  <Image className="h-4 w-4 mr-2" />
-                  View Gallery
-                </Button>
+                </div>
               </CardContent>
             </Card>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {projects.map((project) => (
+                <Card
+                  key={project.id}
+                  className="cursor-pointer hover:shadow-lg transition-all duration-200 group"
+                  onClick={() => navigate(`/project/${project.id}`)}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1 flex-1">
+                        <CardTitle className="text-lg group-hover:text-primary transition-colors">
+                          {project.name}
+                        </CardTitle>
+                        <CardDescription className="text-sm">
+                          {project.description || 'No description'}
+                        </CardDescription>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2">
+                        {getTaskTypeIcon(project.task_count || 0)}
+                        <span>{project.task_count || 0} tasks</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        <span>{project.active_schedules || 0} active</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Updated {formatDate(project.updated_at)}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
 
-          {/* Recent Activity and Queue */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="shadow-card border-brand-accent/50 bg-white/90">
-              <CardHeader className="border-b border-brand-accent/30">
-                <CardTitle className="text-brand-neutral flex items-center gap-2">
-                  <Activity className="h-5 w-5" />
-                  Recent Activity
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-6">
-                {activities.length > 0 ? (
-                  <div className="space-y-4">
-                    {activities.map((activity, index) => (
+        {/* Recent Activity */}
+        {activities.length > 0 && (
+          <section className="space-y-6">
+            <h3 className="text-2xl font-semibold">Recent Activity</h3>
+            <Card>
+              <CardContent className="p-0">
+                {loadingActivities ? (
+                  <div className="p-6 text-center">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {activities.map((activity) => (
                       <div
-                        key={index}
-                        className="flex items-start space-x-3 p-3 rounded-lg bg-brand-accent/30"
+                        key={activity.id}
+                        className="p-4 hover:bg-muted/50 transition-colors"
                       >
-                        <div
-                          className={`w-2 h-2 ${activity.color} rounded-full mt-2`}
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm text-brand-neutral font-medium">
-                            {activity.message}
-                          </p>
-                          <p className="text-xs text-brand-neutral/70">
-                            {activity.time}
-                          </p>
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-full bg-primary/10">
+                            <Activity className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">
+                                {activity.title}
+                              </span>
+                              {activity.project_name && (
+                                <Badge variant="secondary" className="text-xs">
+                                  {activity.project_name}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {activity.description}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDate(activity.timestamp)}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <div className="p-4 rounded-full bg-brand-accent mx-auto w-fit mb-4">
-                      <Clock className="h-12 w-12 text-brand-neutral/50" />
-                    </div>
-                    <p className="text-brand-neutral font-medium">
-                      No recent activity
-                    </p>
-                  </div>
                 )}
               </CardContent>
             </Card>
-
-            <Card className="shadow-card border-brand-accent/50 bg-white/90">
-              <CardHeader className="flex flex-row items-center justify-between border-b border-brand-accent/30">
-                <CardTitle className="text-brand-neutral">
-                  Generation Queue
-                </CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-brand-neutral/70 font-medium">
-                    0 pending
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-brand-primary/20 hover:bg-brand-accent text-brand-primary"
-                  >
-                    Manage Queue
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-6">
-                <div className="text-center py-8">
-                  <div className="p-4 rounded-full bg-brand-accent mx-auto w-fit mb-4">
-                    <Settings className="h-12 w-12 text-brand-neutral/50" />
-                  </div>
-                  <p className="text-brand-neutral font-medium">
-                    No items in queue
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+          </section>
+        )}
       </main>
     </div>
   );

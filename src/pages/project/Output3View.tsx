@@ -66,18 +66,64 @@ const Output3View = () => {
     try {
       if (!user?.id) return;
 
-      // Fetch journal blog posts
+      // First get all task IDs for this project
+      const { data: tasks, error: tasksError } = await supabase
+        .from('tasks')
+        .select('id')
+        .eq('project_id', project?.id);
+
+      if (tasksError) throw tasksError;
+
+      const taskIds = tasks?.map((task) => task.id) || [];
+
+      if (taskIds.length === 0) {
+        setBlogPosts([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Get schedule IDs for these tasks
+      const { data: schedules, error: schedulesError } = await supabase
+        .from('schedules')
+        .select('id')
+        .in('task_id', taskIds);
+
+      if (schedulesError) throw schedulesError;
+
+      const scheduleIds = schedules?.map((schedule) => schedule.id) || [];
+
+      if (scheduleIds.length === 0) {
+        setBlogPosts([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch journal content from generated_content table
       const { data: posts, error } = await supabase
-        .from('journal_blog_posts')
+        .from('generated_content')
         .select('*')
         .eq('user_id', user.id)
+        .eq('task_type', 'journal')
+        .eq('content_type', 'text')
+        .in('schedule_id', scheduleIds)
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching journal blog posts:', error);
         toast.error('Failed to fetch journal blog posts');
       } else {
-        setBlogPosts(posts || []);
+        // Transform the data to match the expected JournalBlogPost interface
+        const transformedPosts = (posts || []).map((post) => ({
+          id: post.id,
+          user_id: post.user_id,
+          title: post.title || 'Untitled',
+          system_prompt: post.metadata?.system_prompt || '',
+          user_prompt: post.metadata?.user_prompt || '',
+          ai_response: post.content_text || '',
+          created_at: post.created_at,
+          updated_at: post.updated_at,
+        }));
+        setBlogPosts(transformedPosts);
       }
     } catch (error) {
       console.error('Error fetching journal blog posts:', error);

@@ -111,6 +111,50 @@ Deno.serve(async (req) => {
     const bucketSettings = (schedule.bucket_settings as any) || {};
     const generationSettings = (schedule.generation_settings as any) || {};
 
+    // Check if we've reached the max images limit
+    const { count: existingContentCount } = await supabase
+      .from('generated_content')
+      .select('*', { count: 'exact', head: true })
+      .eq('schedule_id', schedule_id)
+      .eq('content_type', 'image');
+
+    // Support both field names: max_images and max_images_to_generate
+    const maxImages =
+      generationSettings.max_images_to_generate ||
+      generationSettings.max_images ||
+      10;
+
+    if (existingContentCount && existingContentCount >= maxImages) {
+      console.log(
+        `📸 Schedule ${schedule.name} has reached max images limit (${maxImages})`
+      );
+
+      // Disable the schedule
+      await supabase
+        .from('schedules')
+        .update({
+          status: 'paused',
+        })
+        .eq('id', schedule_id);
+
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: `Schedule paused: reached max images limit of ${maxImages}`,
+          existing_images: existingContentCount,
+          max_images: maxImages,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
+      );
+    }
+
+    console.log(
+      `📊 Image generation progress: ${existingContentCount}/${maxImages} images generated`
+    );
+
     // Create or update generation job
     let generation_job_id = job_id;
 
@@ -162,13 +206,13 @@ Deno.serve(async (req) => {
         '🗂️ Bucket mode: Fetching bucket images for batch generation...'
       );
 
-      // Fetch all bucket images for this project and user
+      // Fetch all bucket images for this task and user
       const { data: bucketImages, error: bucketError } = await supabase
         .from('project_bucket_images')
         .select('*')
-        .eq('project_id', schedule.project_id)
+        .eq('task_id', schedule.task_id)
         .eq('user_id', schedule.user_id)
-        .eq('project_type', 'image-generation')
+        .eq('task_type', 'image-generation')
         .order('created_at', { ascending: false });
 
       if (bucketError) {
@@ -239,7 +283,7 @@ Deno.serve(async (req) => {
           const timestamp = Date.now() + totalImagesGenerated; // Add offset to prevent conflicts
           const filename = generateStoragePath({
             userId: schedule.user_id,
-            projectId: schedule.project_id,
+            projectId: schedule.task_id,
             projectType: 'image-generation',
             timestamp: timestamp,
           });
@@ -275,9 +319,9 @@ Deno.serve(async (req) => {
             .insert([
               {
                 user_id: schedule.user_id,
-                project_id: schedule.project_id,
+                task_id: schedule.task_id,
                 schedule_id: schedule_id,
-                project_type: schedule.project_type,
+                task_type: schedule.task_type,
                 content_type: 'image',
                 title: `Generated from ${bucketImage.filename}`,
                 description: schedule.prompt,
@@ -378,11 +422,11 @@ Deno.serve(async (req) => {
       const imageBlob = await imageResponse.blob();
       const imageBuffer = await imageBlob.arrayBuffer();
 
-      // Create a unique filename with timestamp and project info
+      // Create a unique filename with timestamp and task info
       const timestamp = Date.now();
       const filename = generateStoragePath({
         userId: schedule.user_id,
-        projectId: schedule.project_id,
+        projectId: schedule.task_id,
         projectType: 'image-generation',
         timestamp: timestamp,
       });
@@ -419,9 +463,9 @@ Deno.serve(async (req) => {
         .insert([
           {
             user_id: schedule.user_id,
-            project_id: schedule.project_id,
+            task_id: schedule.task_id,
             schedule_id: schedule_id,
-            project_type: schedule.project_type,
+            task_type: schedule.task_type,
             content_type: 'image',
             title: 'AI Generated Image',
             description: schedule.prompt,
@@ -461,7 +505,7 @@ Deno.serve(async (req) => {
       .from('generation_jobs')
       .update({
         status: 'completed',
-        output_metadata: {
+        output_data: {
           images_generated: totalImagesGenerated,
         },
       })
@@ -474,7 +518,7 @@ Deno.serve(async (req) => {
 
     // Update schedule's next run time
     const scheduleConfig = (schedule.schedule_config as any) || {};
-    const intervalMinutes = scheduleConfig.interval_minutes || 60;
+    const intervalMinutes = scheduleConfig.generation_interval_minutes || 60;
     const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
 
     const { error: scheduleUpdateError } = await supabase

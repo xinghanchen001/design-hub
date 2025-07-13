@@ -61,9 +61,9 @@ export type Database = {
             | null;
           id: string;
           metadata: Json | null;
-          project_id: string | null;
-          project_type: string;
           schedule_id: string | null;
+          task_id: string | null;
+          task_type: string;
           title: string | null;
           updated_at: string | null;
           user_id: string | null;
@@ -81,9 +81,9 @@ export type Database = {
             | null;
           id?: string;
           metadata?: Json | null;
-          project_id?: string | null;
-          project_type: string;
           schedule_id?: string | null;
+          task_id?: string | null;
+          task_type: string;
           title?: string | null;
           updated_at?: string | null;
           user_id?: string | null;
@@ -101,26 +101,26 @@ export type Database = {
             | null;
           id?: string;
           metadata?: Json | null;
-          project_id?: string | null;
-          project_type?: string;
           schedule_id?: string | null;
+          task_id?: string | null;
+          task_type?: string;
           title?: string | null;
           updated_at?: string | null;
           user_id?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: 'generated_content_project_id_fkey';
-            columns: ['project_id'];
-            isOneToOne: false;
-            referencedRelation: 'projects';
-            referencedColumns: ['id'];
-          },
-          {
             foreignKeyName: 'generated_content_schedule_id_fkey';
             columns: ['schedule_id'];
             isOneToOne: false;
             referencedRelation: 'schedules';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'generated_content_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
             referencedColumns: ['id'];
           }
         ];
@@ -135,10 +135,10 @@ export type Database = {
           input_data: Json | null;
           job_type: Database['public']['Enums']['job_type'];
           output_data: Json | null;
-          project_type: string;
           schedule_id: string | null;
           started_at: string | null;
           status: Database['public']['Enums']['job_status'] | null;
+          task_type: string;
           user_id: string | null;
         };
         Insert: {
@@ -150,10 +150,10 @@ export type Database = {
           input_data?: Json | null;
           job_type: Database['public']['Enums']['job_type'];
           output_data?: Json | null;
-          project_type: string;
           schedule_id?: string | null;
           started_at?: string | null;
           status?: Database['public']['Enums']['job_status'] | null;
+          task_type: string;
           user_id?: string | null;
         };
         Update: {
@@ -165,10 +165,10 @@ export type Database = {
           input_data?: Json | null;
           job_type?: Database['public']['Enums']['job_type'];
           output_data?: Json | null;
-          project_type?: string;
           schedule_id?: string | null;
           started_at?: string | null;
           status?: Database['public']['Enums']['job_status'] | null;
+          task_type?: string;
           user_id?: string | null;
         };
         Relationships: [
@@ -190,9 +190,9 @@ export type Database = {
           image_url: string;
           metadata: Json | null;
           mime_type: string | null;
-          project_id: string | null;
-          project_type: string;
           storage_path: string;
+          task_id: string | null;
+          task_type: string;
           updated_at: string | null;
           user_id: string | null;
         };
@@ -204,9 +204,9 @@ export type Database = {
           image_url: string;
           metadata?: Json | null;
           mime_type?: string | null;
-          project_id?: string | null;
-          project_type: string;
           storage_path: string;
+          task_id?: string | null;
+          task_type: string;
           updated_at?: string | null;
           user_id?: string | null;
         };
@@ -218,18 +218,18 @@ export type Database = {
           image_url?: string;
           metadata?: Json | null;
           mime_type?: string | null;
-          project_id?: string | null;
-          project_type?: string;
           storage_path?: string;
+          task_id?: string | null;
+          task_type?: string;
           updated_at?: string | null;
           user_id?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: 'project_bucket_images_project_id_fkey';
-            columns: ['project_id'];
+            foreignKeyName: 'project_bucket_images_task_id_fkey';
+            columns: ['task_id'];
             isOneToOne: false;
-            referencedRelation: 'projects';
+            referencedRelation: 'tasks';
             referencedColumns: ['id'];
           }
         ];
@@ -240,9 +240,6 @@ export type Database = {
           description: string | null;
           id: string;
           name: string;
-          project_type: Database['public']['Enums']['project_type'];
-          settings: Json | null;
-          status: Database['public']['Enums']['project_status'] | null;
           updated_at: string | null;
           user_id: string | null;
         };
@@ -251,9 +248,6 @@ export type Database = {
           description?: string | null;
           id?: string;
           name: string;
-          project_type: Database['public']['Enums']['project_type'];
-          settings?: Json | null;
-          status?: Database['public']['Enums']['project_status'] | null;
           updated_at?: string | null;
           user_id?: string | null;
         };
@@ -262,9 +256,6 @@ export type Database = {
           description?: string | null;
           id?: string;
           name?: string;
-          project_type?: Database['public']['Enums']['project_type'];
-          settings?: Json | null;
-          status?: Database['public']['Enums']['project_status'] | null;
           updated_at?: string | null;
           user_id?: string | null;
         };
@@ -280,11 +271,11 @@ export type Database = {
           last_run: string | null;
           name: string;
           next_run: string | null;
-          project_id: string | null;
-          project_type: string;
           prompt: string | null;
           schedule_config: Json | null;
           status: Database['public']['Enums']['schedule_status'] | null;
+          task_id: string | null;
+          task_type: string;
           updated_at: string | null;
           user_id: string | null;
         };
@@ -297,11 +288,11 @@ export type Database = {
           last_run?: string | null;
           name: string;
           next_run?: string | null;
-          project_id?: string | null;
-          project_type: string;
           prompt?: string | null;
           schedule_config?: Json | null;
           status?: Database['public']['Enums']['schedule_status'] | null;
+          task_id?: string | null;
+          task_type: string;
           updated_at?: string | null;
           user_id?: string | null;
         };
@@ -314,17 +305,64 @@ export type Database = {
           last_run?: string | null;
           name?: string;
           next_run?: string | null;
-          project_id?: string | null;
-          project_type?: string;
           prompt?: string | null;
           schedule_config?: Json | null;
           status?: Database['public']['Enums']['schedule_status'] | null;
+          task_id?: string | null;
+          task_type?: string;
           updated_at?: string | null;
           user_id?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: 'schedules_project_id_fkey';
+            foreignKeyName: 'schedules_task_id_fkey';
+            columns: ['task_id'];
+            isOneToOne: false;
+            referencedRelation: 'tasks';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      tasks: {
+        Row: {
+          created_at: string | null;
+          description: string | null;
+          id: string;
+          name: string;
+          project_id: string | null;
+          settings: Json | null;
+          status: Database['public']['Enums']['project_status'] | null;
+          task_type: Database['public']['Enums']['task_type'];
+          updated_at: string | null;
+          user_id: string | null;
+        };
+        Insert: {
+          created_at?: string | null;
+          description?: string | null;
+          id?: string;
+          name: string;
+          project_id?: string | null;
+          settings?: Json | null;
+          status?: Database['public']['Enums']['project_status'] | null;
+          task_type: Database['public']['Enums']['task_type'];
+          updated_at?: string | null;
+          user_id?: string | null;
+        };
+        Update: {
+          created_at?: string | null;
+          description?: string | null;
+          id?: string;
+          name?: string;
+          project_id?: string | null;
+          settings?: Json | null;
+          status?: Database['public']['Enums']['project_status'] | null;
+          task_type?: Database['public']['Enums']['task_type'];
+          updated_at?: string | null;
+          user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'tasks_project_id_fkey';
             columns: ['project_id'];
             isOneToOne: false;
             referencedRelation: 'projects';
@@ -367,7 +405,7 @@ export type Database = {
       get_user_project_count: {
         Args: {
           user_uuid: string;
-          p_type: Database['public']['Enums']['project_type'];
+          p_type: Database['public']['Enums']['task_type'];
         };
         Returns: number;
       };
@@ -391,8 +429,8 @@ export type Database = {
       job_status: 'queued' | 'processing' | 'completed' | 'failed';
       job_type: 'single' | 'batch';
       project_status: 'active' | 'paused' | 'archived';
-      project_type: 'image-generation' | 'print-on-shirt' | 'journal';
       schedule_status: 'active' | 'paused' | 'stopped';
+      task_type: 'image-generation' | 'print-on-shirt' | 'journal';
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -528,8 +566,16 @@ export const Constants = {
       job_status: ['queued', 'processing', 'completed', 'failed'],
       job_type: ['single', 'batch'],
       project_status: ['active', 'paused', 'archived'],
-      project_type: ['image-generation', 'print-on-shirt', 'journal'],
       schedule_status: ['active', 'paused', 'stopped'],
+      task_type: ['image-generation', 'print-on-shirt', 'journal'],
     },
   },
 } as const;
+
+// Type aliases for convenience
+export type GeneratedContent = Tables<'generated_content'>;
+export type Project = Tables<'projects'>;
+export type Task = Tables<'tasks'>;
+export type Schedule = Tables<'schedules'>;
+export type GenerationJob = Tables<'generation_jobs'>;
+export type BucketImage = Tables<'project_bucket_images'>;

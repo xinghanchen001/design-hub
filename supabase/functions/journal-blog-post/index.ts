@@ -231,9 +231,9 @@ Deno.serve(async (req: Request) => {
               .insert([
                 {
                   user_id: user.id,
-                  project_id: null, // Journal posts might not be tied to a specific project
+                  task_id: null, // Journal posts might not be tied to a specific task
                   schedule_id: null,
-                  project_type: 'journal',
+                  task_type: 'journal',
                   content_type: 'text',
                   prompt: userPrompt,
                   content_url:
@@ -315,9 +315,9 @@ Deno.serve(async (req: Request) => {
           .insert([
             {
               user_id: user.id,
-              project_id: null, // Journal posts might not be tied to a specific project
+              task_id: null, // Journal posts might not be tied to a specific task
               schedule_id: null,
-              project_type: 'journal',
+              task_type: 'journal',
               content_type: 'text',
               prompt: userPrompt,
               content_url: aiResponse,

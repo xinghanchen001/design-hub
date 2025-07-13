@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -20,114 +21,64 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-} from '@/components/ui/sidebar';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Progress } from '@/components/ui/progress';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import {
+  ArrowLeft,
   Bot,
-  Calendar,
-  Image,
-  Activity,
+  Plus,
   Settings,
+  Image,
+  Shirt,
+  FileText,
+  Calendar,
+  Activity,
+  ChevronRight,
+  Edit,
+  Trash2,
   Play,
   Pause,
   BarChart3,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Plus,
-  Images,
-  Zap,
-  Trash2,
-  FileText,
-  Send,
   Loader2,
-  CheckSquare,
-  Square,
-  X,
 } from 'lucide-react';
 
 interface Project {
   id: string;
   name: string;
   description: string | null;
-  prompt: string | null;
-  reference_image_url: string | null;
-  schedule_enabled: boolean;
-  schedule_duration_hours: number;
-  max_images_to_generate: number;
-  generation_interval_minutes: number;
-  last_generation_at: string;
-  is_active: boolean;
-  status: string;
-  created_at: string;
-  updated_at: string;
-}
-
-interface GenerationJob {
-  id: string;
-  status: string;
-  scheduled_at: string;
-  started_at: string;
-  completed_at: string;
-  error_message: string;
-  images_generated: number;
-}
-
-interface GeneratedImage {
-  id: string;
-  content_url: string;
-  metadata: any;
-  created_at: string;
-  schedule_id: string;
-  schedule_name?: string | null;
-  project_type?: string | null;
-  generation_status: string;
-  content_type: string;
-  // Legacy compatibility fields
-  image_url?: string;
-  generated_at?: string;
-  project_id?: string;
-  project_name?: string | null;
-  storage_path?: string | null;
-  prompt?: string;
-  model_used?: string;
-  generation_time_seconds?: number;
-}
-
-interface JournalBlogPost {
-  id: string;
-  title: string;
-  system_prompt: string;
-  user_prompt: string;
-  ai_response: string;
   created_at: string;
   updated_at: string;
   user_id: string;
+}
+
+interface Task {
+  id: string;
+  name: string;
+  description: string | null;
+  task_type: 'image-generation' | 'print-on-shirt' | 'journal';
+  status: 'active' | 'paused' | 'archived';
+  settings: any;
+  created_at: string;
+  updated_at: string;
+  project_id: string;
+  schedules_count?: number;
+  generated_content_count?: number;
+  active_schedules?: number;
+}
+
+interface ProjectStats {
+  total_tasks: number;
+  total_generated_content: number;
+  active_schedules: number;
+  total_schedules: number;
 }
 
 const ProjectDetail = () => {
@@ -136,32 +87,38 @@ const ProjectDetail = () => {
   const navigate = useNavigate();
 
   const [project, setProject] = useState<Project | null>(null);
-  const [jobs, setJobs] = useState<GenerationJob[]>([]);
-  const [images, setImages] = useState<GeneratedImage[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [stats, setStats] = useState<ProjectStats>({
+    total_tasks: 0,
+    total_generated_content: 0,
+    active_schedules: 0,
+    total_schedules: 0,
+  });
   const [loading, setLoading] = useState(true);
-  const [activeView, setActiveView] = useState('dashboard');
-  const [userProjects, setUserProjects] = useState<Project[]>([]);
-  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
-  const [settingsForm, setSettingsForm] = useState({
+  const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
+  const [showEditProjectDialog, setShowEditProjectDialog] = useState(false);
+  const [createTaskForm, setCreateTaskForm] = useState({
     name: '',
     description: '',
-    prompt: '',
-    reference_image_url: '',
+    task_type: 'image-generation' as
+      | 'image-generation'
+      | 'print-on-shirt'
+      | 'journal',
   });
-  const [settingsLoading, setSettingsLoading] = useState(false);
-  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [isDeletingImages, setIsDeletingImages] = useState(false);
+  const [editProjectForm, setEditProjectForm] = useState({
+    name: '',
+    description: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!user || !projectId) return;
-
     fetchProjectData();
   }, [user, projectId]);
 
   const fetchProjectData = async () => {
     try {
-      // Fetch current project details
+      // Fetch project details
       const { data: projectData, error: projectError } = await supabase
         .from('projects')
         .select('*')
@@ -171,305 +128,189 @@ const ProjectDetail = () => {
 
       if (projectError) throw projectError;
       setProject(projectData);
+      setEditProjectForm({
+        name: projectData.name,
+        description: projectData.description || '',
+      });
 
-      // Fetch ALL user projects for schedules view
-      const { data: allProjectsData, error: allProjectsError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false });
-
-      if (allProjectsError) throw allProjectsError;
-      setUserProjects(allProjectsData || []);
-
-      // Fetch generation jobs for this project
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('generation_jobs')
+      // Fetch tasks for this project
+      const { data: tasksData, error: tasksError } = await supabase
+        .from('tasks')
         .select('*')
         .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-        .limit(10);
+        .order('created_at', { ascending: false });
 
-      if (jobsError) throw jobsError;
-      setJobs(jobsData || []);
+      if (tasksError) throw tasksError;
 
-      // Fetch ALL generated images for this user (not just current project)
-      const { data: contentData, error: contentError } = await supabase
-        .from('generated_content')
-        .select(
-          `
-          *,
-          schedules:schedule_id (
-            name,
-            project_type
-          )
-        `
-        )
-        .eq('user_id', user?.id)
-        .eq('content_type', 'image')
-        .eq('generation_status', 'completed')
-        .not('content_url', 'is', null)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      // For each task, get counts of schedules and generated content
+      const tasksWithCounts = await Promise.all(
+        (tasksData || []).map(async (task) => {
+          const { count: schedulesCount } = await supabase
+            .from('schedules')
+            .select('*', { count: 'exact', head: true })
+            .eq('task_id', task.id);
 
-      if (contentError) throw contentError;
+          const { count: activeSchedulesCount } = await supabase
+            .from('schedules')
+            .select('*', { count: 'exact', head: true })
+            .eq('task_id', task.id)
+            .eq('status', 'active');
 
-      // Transform the data to include project names and legacy compatibility
-      const transformedImages = (contentData || []).map((content) => ({
-        id: content.id,
-        content_url: content.content_url,
-        metadata: content.metadata,
-        created_at: content.created_at,
-        schedule_id: content.schedule_id,
-        schedule_name: content.schedules?.name || null,
-        project_type: content.schedules?.project_type || null,
-        generation_status: content.generation_status,
-        content_type: content.content_type,
-        // Legacy fields for compatibility
-        image_url: content.content_url,
-        generated_at: content.created_at,
-        project_id: content.schedule_id,
-        project_name: content.schedules?.name || null,
-        storage_path: content.metadata?.storage_path || null,
-        prompt: content.metadata?.prompt || '',
-        model_used: content.metadata?.model_used || undefined,
-        generation_time_seconds:
-          content.metadata?.generation_time_seconds || undefined,
-      }));
+          const { count: contentCount } = await supabase
+            .from('generated_content')
+            .select('*', { count: 'exact', head: true })
+            .eq('task_id', task.id);
 
-      setImages(transformedImages || []);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to load project data');
-      navigate('/');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleSchedule = async () => {
-    if (!project) return;
-
-    try {
-      const { error } = await supabase
-        .from('projects')
-        .update({ schedule_enabled: !project.schedule_enabled })
-        .eq('id', projectId);
-
-      if (error) throw error;
-
-      setProject((prev) =>
-        prev ? { ...prev, schedule_enabled: !prev.schedule_enabled } : null
-      );
-      toast.success(
-        project.schedule_enabled ? 'Schedule paused' : 'Schedule activated'
-      );
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to update schedule');
-    }
-  };
-
-  const deleteProject = async () => {
-    if (
-      !project ||
-      !window.confirm(
-        'Are you sure you want to delete this schedule? All generated images and jobs will also be deleted.'
-      )
-    )
-      return;
-
-    try {
-      setLoading(true);
-
-      // Delete the project (this will cascade delete related images and jobs due to foreign key constraints)
-      const { error } = await supabase
-        .from('projects')
-        .delete()
-        .eq('id', projectId);
-
-      if (error) throw error;
-
-      toast.success('Schedule deleted successfully');
-      navigate('/');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to delete schedule');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateNow = async () => {
-    if (!project) return;
-
-    try {
-      toast.info('Starting image generation...');
-
-      const { data, error } = await supabase.functions.invoke(
-        'generate-image',
-        {
-          body: {
-            project_id: projectId,
-            manual_generation: true,
-          },
-        }
+          return {
+            ...task,
+            schedules_count: schedulesCount || 0,
+            generated_content_count: contentCount || 0,
+            active_schedules: activeSchedulesCount || 0,
+          };
+        })
       );
 
-      if (error) throw error;
+      setTasks(tasksWithCounts);
 
-      if (data?.success) {
-        toast.success('Image generated successfully!');
-        // Refresh the data
-        fetchProjectData();
-      } else {
-        throw new Error(data?.error || 'Generation failed');
-      }
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to generate image');
-    }
-  };
+      // Calculate project stats
+      const totalTasks = tasksWithCounts.length;
+      const totalGeneratedContent = tasksWithCounts.reduce(
+        (sum, task) => sum + (task.generated_content_count || 0),
+        0
+      );
+      const activeSchedules = tasksWithCounts.reduce(
+        (sum, task) => sum + (task.active_schedules || 0),
+        0
+      );
+      const totalSchedules = tasksWithCounts.reduce(
+        (sum, task) => sum + (task.schedules_count || 0),
+        0
+      );
 
-  const openSettingsDialog = () => {
-    if (project) {
-      setSettingsForm({
-        name: project.name,
-        description: project.description || '',
-        prompt: project.prompt || '',
-        reference_image_url: project.reference_image_url || '',
+      setStats({
+        total_tasks: totalTasks,
+        total_generated_content: totalGeneratedContent,
+        active_schedules: activeSchedules,
+        total_schedules: totalSchedules,
       });
-      setShowSettingsDialog(true);
+    } catch (error: any) {
+      console.error('Error fetching project data:', error);
+      toast.error('Failed to load project data');
+      navigate('/');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const updateProjectSettings = async () => {
+  const handleCreateTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !project) return;
+
+    if (!createTaskForm.name.trim()) {
+      toast.error('Please enter a task name');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const taskData = {
+        name: createTaskForm.name.trim(),
+        description: createTaskForm.description.trim() || null,
+        task_type: createTaskForm.task_type,
+        project_id: project.id,
+        user_id: user.id,
+        status: 'active' as const,
+        settings: {},
+      };
+
+      const { data: newTask, error } = await supabase
+        .from('tasks')
+        .insert([taskData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast.success('Task created successfully!');
+      setShowCreateTaskDialog(false);
+      setCreateTaskForm({
+        name: '',
+        description: '',
+        task_type: 'image-generation',
+      });
+
+      // Navigate to task configuration page
+      navigate(`/task/${newTask.id}/configure`);
+    } catch (error: any) {
+      console.error('Error creating task:', error);
+      toast.error(error.message || 'Failed to create task');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
     if (!project) return;
 
+    setSubmitting(true);
     try {
-      setSettingsLoading(true);
-
       const { error } = await supabase
         .from('projects')
         .update({
-          name: settingsForm.name,
-          description: settingsForm.description || null,
-          prompt: settingsForm.prompt || null,
-          reference_image_url: settingsForm.reference_image_url || null,
+          name: editProjectForm.name.trim(),
+          description: editProjectForm.description.trim() || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', project.id);
 
       if (error) throw error;
 
-      toast.success('Project settings updated successfully');
-      setShowSettingsDialog(false);
-      await fetchProjectData(); // Refresh data
+      toast.success('Project updated successfully!');
+      setShowEditProjectDialog(false);
+      fetchProjectData(); // Refresh data
     } catch (error: any) {
-      toast.error(error.message || 'Failed to update project settings');
+      console.error('Error updating project:', error);
+      toast.error(error.message || 'Failed to update project');
     } finally {
-      setSettingsLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const toggleImageSelection = (imageId: string) => {
-    setSelectedImages((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(imageId)) {
-        newSet.delete(imageId);
-      } else {
-        newSet.add(imageId);
-      }
-      return newSet;
+  const getTaskTypeIcon = (taskType: string) => {
+    switch (taskType) {
+      case 'image-generation':
+        return <Image className="h-4 w-4" />;
+      case 'print-on-shirt':
+        return <Shirt className="h-4 w-4" />;
+      case 'journal':
+        return <FileText className="h-4 w-4" />;
+      default:
+        return <Bot className="h-4 w-4" />;
+    }
+  };
+
+  const getTaskTypeLabel = (taskType: string) => {
+    switch (taskType) {
+      case 'image-generation':
+        return 'Image Generation';
+      case 'print-on-shirt':
+        return 'Print on Shirt';
+      case 'journal':
+        return 'Journal';
+      default:
+        return taskType;
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
-  };
-
-  const selectAllImages = () => {
-    setSelectedImages(new Set(images.map((img) => img.id)));
-  };
-
-  const deselectAllImages = () => {
-    setSelectedImages(new Set());
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedImages.size === images.length) {
-      deselectAllImages();
-    } else {
-      selectAllImages();
-    }
-  };
-
-  const deleteSelectedImages = async () => {
-    if (selectedImages.size === 0) return;
-
-    const confirmMessage = `Are you sure you want to delete ${
-      selectedImages.size
-    } selected image${
-      selectedImages.size > 1 ? 's' : ''
-    }? This action cannot be undone.`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    try {
-      setIsDeletingImages(true);
-
-      // Get the images to delete
-      const imagesToDelete = images.filter((img) => selectedImages.has(img.id));
-
-      // Delete from storage first (if storage_path exists)
-      const storageDeletePromises = imagesToDelete
-        .filter((img) => img.storage_path)
-        .map(async (img) => {
-          const { error } = await supabase.storage
-            .from('generated-images')
-            .remove([img.storage_path!]);
-
-          if (error) {
-            console.error(
-              `Failed to delete storage file for image ${img.id}:`,
-              error
-            );
-          }
-        });
-
-      await Promise.allSettled(storageDeletePromises);
-
-      // Delete from database
-      const { error } = await supabase
-        .from('generated_content')
-        .delete()
-        .in('id', Array.from(selectedImages));
-
-      if (error) throw error;
-
-      toast.success(
-        `Successfully deleted ${selectedImages.size} image${
-          selectedImages.size > 1 ? 's' : ''
-        }`
-      );
-
-      // Reset selection and exit selection mode
-      setSelectedImages(new Set());
-      setIsSelecting(false);
-
-      // Refresh data
-      await fetchProjectData();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to delete images');
-    } finally {
-      setIsDeletingImages(false);
-    }
-  };
-
-  const stats = {
-    activeSchedules: userProjects.filter(
-      (p) => p.schedule_enabled && p.is_active
-    ).length,
-    imagesGenerated: images.length,
-    queueStatus: jobs.filter((job) => job.status === 'pending').length,
-    successRate:
-      jobs.length > 0
-        ? (jobs.filter((job) => job.status === 'completed').length /
-            jobs.length) *
-          100
-        : 100,
   };
 
   if (loading) {
@@ -487,1397 +328,424 @@ const ProjectDetail = () => {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-subtle">
         <div className="text-center space-y-4">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-          <p className="text-muted-foreground">Project not found</p>
-          <Button onClick={() => navigate('/')}>Back to Dashboard</Button>
+          <Bot className="h-12 w-12 text-muted-foreground mx-auto" />
+          <h2 className="text-xl font-semibold">Project not found</h2>
+          <p className="text-muted-foreground">
+            The project you're looking for doesn't exist or you don't have
+            access to it.
+          </p>
+          <Button onClick={() => navigate('/')}>Go Back</Button>
         </div>
       </div>
     );
   }
 
-  const sidebarItems = [
-    { title: 'Dashboard', icon: BarChart3, key: 'dashboard' },
-    { title: 'Schedules', icon: Calendar, key: 'schedules' },
-    { title: 'Generation Queue', icon: Clock, key: 'queue' },
-    { title: 'Generated Images', icon: Images, key: 'images' },
-    { title: 'Journal Blog Post', icon: FileText, key: 'journal' },
-    { title: 'Settings', icon: Settings, key: 'settings' },
-  ];
-
-  const AppSidebar = () => (
-    <Sidebar className="w-60">
-      <SidebarContent>
-        {/* Project Header */}
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="p-1.5 rounded-lg bg-gradient-primary">
-              <Bot className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="text-sm font-medium text-foreground">
-              AI Image Agent
-            </span>
-          </div>
-          <h2 className="font-semibold text-foreground truncate">
-            {project.name}
-          </h2>
-          <p className="text-xs text-muted-foreground">Runway Gen-4</p>
-        </div>
-
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {sidebarItems.map((item) => (
-                <SidebarMenuItem key={item.key}>
-                  <SidebarMenuButton
-                    onClick={() => setActiveView(item.key)}
-                    className={
-                      activeView === item.key
-                        ? 'bg-muted text-primary font-medium'
-                        : 'hover:bg-muted/50'
-                    }
-                  >
-                    <item.icon className="mr-2 h-4 w-4" />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Theme Toggle */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Appearance</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <div className="px-2">
-              <ThemeToggle />
-            </div>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-    </Sidebar>
-  );
-
-  const DashboardView = () => (
-    <div className="space-y-6">
+  return (
+    <div className="min-h-screen bg-gradient-subtle">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Monitor your AI image generation tasks
-          </p>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="shadow-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Active Schedules
-            </CardTitle>
-            <Calendar className="h-4 w-4 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeSchedules}</div>
-            <p className="text-xs text-green-500">+12% from last week</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Images Generated
-            </CardTitle>
-            <Image className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.imagesGenerated}</div>
-            <p className="text-xs text-green-500">+24% from last week</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Queue Status</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.queueStatus}</div>
-            <p className="text-xs text-muted-foreground">pending generation</p>
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Success Rate</CardTitle>
-            <CheckCircle className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {stats.successRate.toFixed(0)}%
+      <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            {/* Breadcrumb Navigation */}
+            <div className="flex items-center gap-2 text-sm">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/')}
+                className="flex items-center gap-2 text-muted-foreground hover:text-primary px-2"
+              >
+                <Bot className="h-4 w-4" />
+                Design Hub
+              </Button>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Projects</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{project.name}</span>
             </div>
-            <p className="text-xs text-green-500">+0.8% from last week</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Active Schedules & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 shadow-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Active Schedules</CardTitle>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setActiveView('schedules')}
-            >
-              View All
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {stats.activeSchedules > 0 ? (
-              <div className="space-y-3">
-                {userProjects
-                  .filter((p) => p.schedule_enabled && p.is_active)
-                  .slice(0, 3) // Show max 3 active schedules
-                  .map((activeProject) => (
-                    <div
-                      key={activeProject.id}
-                      className={`flex items-center justify-between p-4 border border-border rounded-lg ${
-                        activeProject.id === projectId ? 'bg-muted/30' : ''
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-full bg-green-100">
-                          <CheckCircle className="h-4 w-4 text-green-600" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium">{activeProject.name}</p>
-                            {activeProject.id === projectId && (
-                              <Badge variant="outline" className="text-xs">
-                                Current
-                              </Badge>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">
-                            Every {activeProject.generation_interval_minutes}m
-                            for {activeProject.schedule_duration_hours}h
-                          </p>
-                        </div>
-                      </div>
-                      <Badge variant="secondary">Active</Badge>
-                    </div>
-                  ))}
-
-                {/* Show "View All" if there are more than 3 active schedules */}
-                {stats.activeSchedules > 3 && (
-                  <div className="text-center pt-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setActiveView('schedules')}
-                    >
-                      View {stats.activeSchedules - 3} more active schedules
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-2">
-                  No active schedules
-                </p>
-                <Button onClick={() => navigate('/create-project')} size="sm">
-                  Create your first schedule
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              onClick={() => {
-                if (project.schedule_enabled) {
-                  // If schedule is enabled, toggle it off/on
-                  toggleSchedule();
-                } else {
-                  // If no schedule is enabled, create a new schedule
-                  navigate('/create-project');
-                }
-              }}
-              className="w-full justify-start"
-              variant="outline"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              {project.schedule_enabled
-                ? 'Toggle Schedule'
-                : 'Create New Schedule'}
-            </Button>
-            <Button
-              onClick={() => setActiveView('images')}
-              className="w-full justify-start"
-              variant="outline"
-            >
-              <Images className="mr-2 h-4 w-4" />
-              View Gallery
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Activity & Generation Queue */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {jobs.length > 0 ? (
-              <div className="space-y-3">
-                {jobs.slice(0, 5).map((job) => (
-                  <div
-                    key={job.id}
-                    className="flex items-center gap-3 p-2 rounded-lg border border-border"
-                  >
-                    <div
-                      className={`p-1 rounded-full ${
-                        job.status === 'completed'
-                          ? 'bg-green-100'
-                          : job.status === 'running'
-                          ? 'bg-blue-100'
-                          : job.status === 'failed'
-                          ? 'bg-red-100'
-                          : 'bg-gray-100'
-                      }`}
-                    >
-                      <Activity
-                        className={`h-3 w-3 ${
-                          job.status === 'completed'
-                            ? 'text-green-600'
-                            : job.status === 'running'
-                            ? 'text-blue-600'
-                            : job.status === 'failed'
-                            ? 'text-red-600'
-                            : 'text-gray-600'
-                        }`}
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{job.status}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(job.scheduled_at).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-center text-muted-foreground py-8">
-                No recent activity
-              </p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="shadow-card border-border/50">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Generation Queue</CardTitle>
-              <CardDescription>{stats.queueStatus} pending</CardDescription>
-            </div>
-            <Button variant="outline" size="sm">
-              Manage Queue
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {stats.queueStatus > 0 ? (
-              <div>Queue items would go here</div>
-            ) : (
-              <div className="text-center py-8">
-                <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">No items in queue</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-
-  const ImagesView = () => (
-    <div className="space-y-6">
-      {/* Header with multi-select controls */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            All Generated Images
-          </h1>
-          <p className="text-muted-foreground">
-            View all AI-generated images from all your schedules
-          </p>
-        </div>
-        {images.length > 0 && (
-          <div className="flex items-center gap-3">
-            <Button
-              variant={isSelecting ? 'secondary' : 'outline'}
-              onClick={() => {
-                setIsSelecting(!isSelecting);
-                if (isSelecting) {
-                  setSelectedImages(new Set());
-                }
-              }}
-            >
-              {isSelecting ? (
-                <>
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel Selection
-                </>
-              ) : (
-                <>
-                  <CheckSquare className="h-4 w-4 mr-2" />
-                  Select Images
-                </>
-              )}
-            </Button>
           </div>
-        )}
-      </div>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowEditProjectDialog(true)}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Edit Project
+            </Button>
+            <Button
+              onClick={() => setShowCreateTaskDialog(true)}
+              className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Task
+            </Button>
+            <ThemeToggle />
+          </div>
+        </div>
 
-      {/* Bulk actions toolbar - show when in selection mode and images are selected */}
-      {isSelecting && selectedImages.size > 0 && (
-        <Card className="shadow-card border-border/50">
-          <CardContent className="p-4">
+        {/* Project Info Bar */}
+        <div className="border-t bg-muted/20">
+          <div className="container mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={selectedImages.size === images.length}
-                    onCheckedChange={toggleSelectAll}
-                    aria-label="Select all images"
-                  />
-                  <span className="text-sm font-medium">
-                    {selectedImages.size === images.length
-                      ? 'Deselect All'
-                      : 'Select All'}
-                  </span>
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  {selectedImages.size} of {images.length} images selected
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={deleteSelectedImages}
-                  disabled={isDeletingImages}
-                >
-                  {isDeletingImages ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Deleting...
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete Selected
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Images grid */}
-      {images.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {images.map((image) => (
-            <Card
-              key={image.id}
-              className={`shadow-card border-border/50 overflow-hidden transition-all duration-200 ${
-                isSelecting
-                  ? selectedImages.has(image.id)
-                    ? 'ring-2 ring-primary bg-primary/5'
-                    : 'hover:ring-2 hover:ring-muted-foreground cursor-pointer'
-                  : ''
-              }`}
-              onClick={
-                isSelecting ? () => toggleImageSelection(image.id) : undefined
-              }
-            >
-              <div className="aspect-square bg-muted relative">
-                <img
-                  src={image.image_url || image.content_url}
-                  alt={image.prompt}
-                  className="w-full h-full object-cover"
-                />
-
-                {/* Selection checkbox */}
-                {isSelecting && (
-                  <div className="absolute top-2 left-2">
-                    <Checkbox
-                      checked={selectedImages.has(image.id)}
-                      onCheckedChange={() => toggleImageSelection(image.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="bg-background/80 border-background/80"
-                    />
-                  </div>
-                )}
-
-                {/* Model badge */}
-                {image.model_used && (
-                  <div
-                    className={`absolute top-2 ${
-                      isSelecting ? 'right-2' : 'right-2'
-                    }`}
-                  >
-                    <Badge variant="secondary" className="text-xs">
-                      {image.model_used === 'flux-kontext-max'
-                        ? 'Edit'
-                        : 'Generate'}
-                    </Badge>
-                  </div>
-                )}
-              </div>
-              <CardContent className="p-4">
-                <div className="space-y-2">
-                  {/* Project name or "Deleted Schedule" */}
-                  <div className="flex items-center gap-2">
-                    <Bot className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {image.project_name || '(Deleted Schedule)'}
-                    </span>
-                  </div>
-
-                  {/* Prompt */}
-                  <p
-                    className="text-sm text-foreground line-clamp-2"
-                    title={image.prompt}
-                  >
-                    {image.prompt}
-                  </p>
-
-                  {/* Date and generation time */}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                      {new Date(image.generated_at).toLocaleDateString()}
-                    </span>
-                    {image.generation_time_seconds && (
-                      <span>{image.generation_time_seconds.toFixed(1)}s</span>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <div className="text-center py-12">
-          <Image className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-foreground mb-2">
-            No images generated yet
-          </h3>
-          <p className="text-muted-foreground">
-            Images will appear here automatically when your schedules run
-          </p>
-        </div>
-      )}
-    </div>
-  );
-
-  const SchedulesView = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Schedules</h1>
-          <p className="text-muted-foreground">
-            Create and manage your image generation schedules
-          </p>
-        </div>
-        <Button onClick={() => navigate('/create-project')}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Schedule
-        </Button>
-      </div>
-
-      <div className="space-y-4">
-        {userProjects.length > 0 ? (
-          userProjects.map((project) => (
-            <Card key={project.id} className="shadow-card border-border/50">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        project.schedule_enabled && project.is_active
-                          ? 'bg-green-500'
-                          : 'bg-gray-400'
-                      }`}
-                    />
-                    <h3 className="text-lg font-semibold">{project.name}</h3>
-                    {project.id === projectId && (
-                      <Badge variant="secondary" className="text-xs">
-                        Current
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
-                      <span className="text-sm font-medium">
-                        {project.schedule_enabled && project.is_active
-                          ? 'Active'
-                          : 'Paused'}
-                      </span>
-                      <Switch
-                        checked={project.schedule_enabled && project.is_active}
-                        onCheckedChange={async () => {
-                          try {
-                            const { error } = await supabase
-                              .from('projects')
-                              .update({
-                                schedule_enabled: !(
-                                  project.schedule_enabled && project.is_active
-                                ),
-                                is_active: !(
-                                  project.schedule_enabled && project.is_active
-                                ),
-                              })
-                              .eq('id', project.id);
-
-                            if (error) throw error;
-
-                            // Refresh data
-                            fetchProjectData();
-                            toast.success(
-                              project.schedule_enabled && project.is_active
-                                ? 'Schedule paused'
-                                : 'Schedule activated'
-                            );
-                          } catch (error: any) {
-                            toast.error(
-                              error.message || 'Failed to update schedule'
-                            );
-                          }
-                        }}
-                      />
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={openSettingsDialog}
-                    >
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={async () => {
-                        if (
-                          !window.confirm(
-                            `Are you sure you want to delete "${project.name}"? All generated images and jobs will also be deleted.`
-                          )
-                        )
-                          return;
-
-                        try {
-                          const { error } = await supabase
-                            .from('projects')
-                            .delete()
-                            .eq('id', project.id);
-
-                          if (error) throw error;
-
-                          toast.success('Schedule deleted successfully');
-
-                          // If we deleted the current project, navigate to first remaining project or home
-                          if (project.id === projectId) {
-                            const remaining = userProjects.filter(
-                              (p) => p.id !== project.id
-                            );
-                            if (remaining.length > 0) {
-                              navigate(`/project/${remaining[0].id}`);
-                            } else {
-                              navigate('/');
-                            }
-                          } else {
-                            fetchProjectData(); // Refresh the list
-                          }
-                        } catch (error: any) {
-                          toast.error(
-                            error.message || 'Failed to delete schedule'
-                          );
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-4">
-                  <div>
-                    <Clock className="h-3 w-3 inline mr-1" />
-                    Every {project.generation_interval_minutes}m
-                  </div>
-                  <div>
-                    <Images className="h-3 w-3 inline mr-1" />
-                    Max: {project.max_images_to_generate || 'Unlimited'}
-                  </div>
-                  <div>
-                    <Zap className="h-3 w-3 inline mr-1" />
-                    Duration: {project.schedule_duration_hours}h
-                  </div>
-                  <div>
-                    <Activity className="h-3 w-3 inline mr-1" />
-                    {project.reference_image_url
-                      ? 'With reference'
-                      : 'Text-to-image'}
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <p className="text-sm font-medium mb-2">Prompt</p>
-                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-2">
-                    {project.prompt || 'No prompt set'}
+                <div>
+                  <h1 className="text-xl font-bold">{project.name}</h1>
+                  <p className="text-sm text-muted-foreground">
+                    {project.description || 'No description'}
                   </p>
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    Created: {new Date(project.created_at).toLocaleDateString()}
-                    {project.schedule_enabled &&
-                      project.is_active &&
-                      project.last_generation_at && (
-                        <span className="ml-4">
-                          Next run:{' '}
-                          {new Date(
-                            new Date(project.last_generation_at).getTime() +
-                              project.generation_interval_minutes * 60000
-                          ).toLocaleString()}
-                        </span>
-                      )}
-                  </div>
-                  <Badge
-                    variant={
-                      project.schedule_enabled && project.is_active
-                        ? 'default'
-                        : 'secondary'
-                    }
-                  >
-                    {project.schedule_enabled && project.is_active
-                      ? 'Active'
-                      : 'Paused'}
-                  </Badge>
+              </div>
+              <div className="flex items-center gap-6 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Bot className="h-4 w-4" />
+                  <span>{stats.total_tasks} tasks</span>
                 </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <div className="text-center py-12">
-            <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-foreground mb-2">
-              No schedules created yet
-            </h3>
-            <p className="text-muted-foreground mb-4">
-              Create your first AI image generation schedule to get started
-            </p>
-            <Button onClick={() => navigate('/create-project')}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Your First Schedule
-            </Button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-
-  const SettingsView = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
-          <p className="text-muted-foreground">
-            Manage your account and application preferences
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Account Information */}
-        <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5" />
-              Account Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Username</label>
-              <p className="text-sm text-muted-foreground">demo</p>
-            </div>
-            <div>
-              <label className="text-sm font-medium">Plan</label>
-              <p className="text-sm text-muted-foreground">Free</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <label className="text-sm font-medium">Available Tokens</label>
-                <p className="text-sm text-muted-foreground">Unlimited</p>
+                <div className="flex items-center gap-1">
+                  <Activity className="h-4 w-4" />
+                  <span>{stats.total_generated_content} generated</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  <span>{stats.active_schedules} active</span>
+                </div>
               </div>
-              <Button variant="outline" size="sm">
-                Upgrade Plan
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* API Configuration */}
-        <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              API Configuration
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">Replicate API Key</label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Your API key is used to authenticate with Replicate's image
-                models
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder="Enter your Replicate API key..."
-                  className="flex-1 px-3 py-2 text-sm border border-border rounded-md bg-background"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium">API Status</label>
-              <p className="text-sm text-green-600">Configured</p>
-            </div>
-            <Button className="w-full">Save API Configuration</Button>
-          </CardContent>
-        </Card>
-
-        {/* Usage Statistics */}
-        <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Usage Statistics
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-medium">Active Schedules</p>
-                <p className="text-2xl font-bold text-primary">
-                  {project?.schedule_enabled ? 1 : 0}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Total Images</p>
-                <p className="text-2xl font-bold text-primary">
-                  {images.length}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Queue Items</p>
-                <p className="text-2xl font-bold text-primary">
-                  {jobs.filter((job) => job.status === 'pending').length}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Success Rate</p>
-                <p className="text-2xl font-bold text-primary">
-                  {stats.successRate.toFixed(0)}%
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              Statistics are updated in real-time as your schedules run
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Data Management */}
-        <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5" />
-              Data Management
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
-                Export Generated Images
-              </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Export Schedule Data
-              </Button>
-              <Button variant="outline" className="w-full justify-start">
-                Import Configuration
-              </Button>
-            </div>
-
-            <div className="border-t pt-3 space-y-2">
-              <Button variant="destructive" className="w-full justify-start">
-                Clear Failed Queue Items
-              </Button>
-              <Button variant="destructive" className="w-full justify-start">
-                Delete All Generated Images
-              </Button>
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                Destructive actions cannot be undone
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* System Information */}
-      <Card className="shadow-card border-border/50">
-        <CardHeader>
-          <CardTitle>System Information</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-6 text-sm">
-            <div>
-              <p className="font-medium">Application Version</p>
-              <p className="text-muted-foreground">1.0.0</p>
-            </div>
-            <div>
-              <p className="font-medium">API Model</p>
-              <p className="text-muted-foreground">Flux Kontext Max</p>
-            </div>
-            <div>
-              <p className="font-medium">Last Updated</p>
-              <p className="text-muted-foreground">Just now</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const QueueView = () => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Generation Queue
-          </h1>
-          <p className="text-muted-foreground">
-            Monitor and manage your image generation queue
-          </p>
         </div>
-        <Button variant="outline">
-          <Settings className="mr-2 h-4 w-4" />
-          Manage Queue
-        </Button>
-      </div>
+      </header>
 
-      <Card className="shadow-card border-border/50">
-        <CardHeader>
-          <CardTitle>Queue Items</CardTitle>
-          <CardDescription>
-            {jobs.filter((job) => job.status === 'pending').length} pending
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {jobs.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Prompt</TableHead>
-                  <TableHead>Resolution</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jobs.slice(0, 10).map((job) => (
-                  <TableRow key={job.id}>
-                    <TableCell className="font-medium">
-                      {project?.prompt || 'No prompt'}
-                    </TableCell>
-                    <TableCell>1080p • 1:1</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          job.status === 'completed'
-                            ? 'default'
-                            : job.status === 'running'
-                            ? 'secondary'
-                            : job.status === 'failed'
-                            ? 'destructive'
-                            : 'outline'
-                        }
-                      >
-                        {job.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">Medium</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="outline" size="sm">
-                          <Settings className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-destructive"
-                        >
-                          <AlertCircle className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="text-center py-12">
-              <Clock className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                No items in queue
-              </h3>
-              <p className="text-muted-foreground">
-                Queue items will appear here when your schedule creates new
-                generation jobs
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-
-  const JournalView = () => {
-    const [isCreating, setIsCreating] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [title, setTitle] = useState('');
-    const [systemPrompt, setSystemPrompt] = useState(
-      'Schreibe diesen Artikel im professionellen Tagesschau-Stil um, mit einer passenden Schlagzeile und Datum. Behalt die wichtigsten Informationen bei, aber mache ihn journalistisch strukturiert und objektiv'
-    );
-    const [userPrompt, setUserPrompt] = useState('');
-    const [expandedPost, setExpandedPost] = useState<string | null>(null);
-    const [journalPosts, setJournalPosts] = useState<JournalBlogPost[]>([]);
-
-    const fetchJournalPosts = async () => {
-      try {
-        const { data: session } = await supabase.auth.getSession();
-        if (!session.session) return;
-
-        const response = await fetch(
-          'https://sphgdlqoabzsyhtyopim.supabase.co/functions/v1/journal-blog-post',
-          {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${session.session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          setJournalPosts(result.data || []);
-        }
-      } catch (error) {
-        console.error('Error fetching journal posts:', error);
-      }
-    };
-
-    useEffect(() => {
-      fetchJournalPosts();
-    }, []);
-
-    const handleCreatePost = async () => {
-      if (!title.trim() || !systemPrompt.trim() || !userPrompt.trim()) {
-        toast.error('Please fill in all fields');
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        const { data: session } = await supabase.auth.getSession();
-        if (!session.session) {
-          toast.error('Please sign in to create a journal post');
-          return;
-        }
-
-        const response = await fetch(
-          'https://sphgdlqoabzsyhtyopim.supabase.co/functions/v1/journal-blog-post',
-          {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${session.session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              title,
-              systemPrompt,
-              userPrompt,
-            }),
-          }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          setJournalPosts([result.data, ...journalPosts]);
-          setTitle('');
-          setUserPrompt('');
-          setIsCreating(false);
-          toast.success('Journal post created successfully!');
-        } else {
-          const error = await response.json();
-          toast.error(error.error || 'Failed to create journal post');
-        }
-      } catch (error) {
-        toast.error('Failed to create journal post');
-        console.error('Error creating journal post:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              Journal Blog Post
-            </h1>
-            <p className="text-muted-foreground">
-              Create AI-powered journal blog posts using your fine-tuned model
-            </p>
-          </div>
-          <Button
-            onClick={() => setIsCreating(!isCreating)}
-            className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Post
-          </Button>
-        </div>
-
-        {isCreating && (
-          <Card className="shadow-card border-border/50">
-            <CardHeader>
-              <CardTitle>Create New Journal Post</CardTitle>
-              <CardDescription>
-                Use your fine-tuned AI model to generate professional journal
-                content
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Title</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Enter post title..."
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">System Prompt</label>
-                <textarea
-                  value={systemPrompt}
-                  onChange={(e) => setSystemPrompt(e.target.value)}
-                  placeholder="Enter system prompt..."
-                  rows={3}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">User Prompt</label>
-                <textarea
-                  value={userPrompt}
-                  onChange={(e) => setUserPrompt(e.target.value)}
-                  placeholder="Enter your content to be transformed..."
-                  rows={6}
-                  className="w-full px-3 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleCreatePost}
-                  disabled={isLoading}
-                  className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4 mr-2" />
-                      Generate Post
-                    </>
-                  )}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setIsCreating(false)}
-                  disabled={isLoading}
-                >
-                  Cancel
-                </Button>
+      <main className="container mx-auto px-4 py-8 space-y-8">
+        {/* Project Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-full bg-primary/10">
+                  <Bot className="h-6 w-6 text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Tasks</p>
+                  <p className="text-2xl font-bold">{stats.total_tasks}</p>
+                </div>
               </div>
             </CardContent>
           </Card>
-        )}
 
-        <div className="space-y-4">
-          {journalPosts.length > 0 ? (
-            journalPosts.map((post) => (
-              <Card key={post.id} className="shadow-card border-border/50">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{post.title}</CardTitle>
-                      <CardDescription>
-                        Created {new Date(post.created_at).toLocaleString()}
-                      </CardDescription>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setExpandedPost(
-                          expandedPost === post.id ? null : post.id
-                        )
-                      }
-                    >
-                      {expandedPost === post.id ? 'Collapse' : 'Expand'}
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="bg-muted/30 p-4 rounded-lg">
-                      <h4 className="font-medium mb-2">AI Response:</h4>
-                      <div className="prose prose-sm max-w-none">
-                        <pre className="whitespace-pre-wrap text-sm">
-                          {post.ai_response}
-                        </pre>
-                      </div>
-                    </div>
-                    {expandedPost === post.id && (
-                      <div className="space-y-3 border-t pt-4">
-                        <div>
-                          <h4 className="font-medium text-sm mb-1">
-                            System Prompt:
-                          </h4>
-                          <p className="text-sm text-muted-foreground bg-muted/20 p-3 rounded-lg">
-                            {post.system_prompt}
-                          </p>
-                        </div>
-                        <div>
-                          <h4 className="font-medium text-sm mb-1">
-                            User Prompt:
-                          </h4>
-                          <p className="text-sm text-muted-foreground bg-muted/20 p-3 rounded-lg">
-                            {post.user_prompt}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <Card className="shadow-card border-border/50">
-              <CardContent className="text-center py-8">
-                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-2">
-                  No journal posts yet
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Create your first journal post to get started
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderActiveView = () => {
-    switch (activeView) {
-      case 'dashboard':
-        return <DashboardView />;
-      case 'images':
-        return <ImagesView />;
-      case 'schedules':
-        return <SchedulesView />;
-      case 'queue':
-        return <QueueView />;
-      case 'journal':
-        return <JournalView />;
-      case 'settings':
-        return <SettingsView />;
-      default:
-        return <DashboardView />;
-    }
-  };
-
-  const ProjectSettingsDialog = () => (
-    <Dialog open={showSettingsDialog} onOpenChange={setShowSettingsDialog}>
-      <DialogContent className="sm:max-w-[525px]">
-        <DialogHeader>
-          <DialogTitle>Project Settings</DialogTitle>
-          <DialogDescription>
-            Update your project's name, description, prompt, and reference
-            image.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-4 py-4">
-          <div className="grid gap-2">
-            <Label htmlFor="name">Project Name</Label>
-            <Input
-              id="name"
-              value={settingsForm.name}
-              onChange={(e) =>
-                setSettingsForm((prev) => ({ ...prev, name: e.target.value }))
-              }
-              placeholder="Enter project name..."
-              className="w-full"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={settingsForm.description}
-              onChange={(e) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  description: e.target.value,
-                }))
-              }
-              placeholder="Enter project description..."
-              className="min-h-[80px]"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="prompt">AI Prompt</Label>
-            <Textarea
-              id="prompt"
-              value={settingsForm.prompt}
-              onChange={(e) =>
-                setSettingsForm((prev) => ({ ...prev, prompt: e.target.value }))
-              }
-              placeholder="Enter your AI prompt..."
-              className="min-h-[100px]"
-            />
-          </div>
-
-          <div className="grid gap-2">
-            <Label htmlFor="reference_image_url">Reference Image URL</Label>
-            <Input
-              id="reference_image_url"
-              value={settingsForm.reference_image_url}
-              onChange={(e) =>
-                setSettingsForm((prev) => ({
-                  ...prev,
-                  reference_image_url: e.target.value,
-                }))
-              }
-              placeholder="https://example.com/image.jpg"
-              className="w-full"
-            />
-            {settingsForm.reference_image_url && (
-              <div className="mt-2">
-                <img
-                  src={settingsForm.reference_image_url}
-                  alt="Reference preview"
-                  className="h-20 w-20 object-cover rounded-md border"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setShowSettingsDialog(false)}
-            disabled={settingsLoading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={updateProjectSettings}
-            disabled={settingsLoading || !settingsForm.name.trim()}
-          >
-            {settingsLoading && (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-
-  return (
-    <div className="min-h-screen bg-gradient-subtle">
-      <SidebarProvider>
-        <div className="flex min-h-screen w-full">
-          <AppSidebar />
-          <main className="flex-1">
-            {/* Header */}
-            <header className="border-b border-border/50 bg-card/80 backdrop-blur-sm">
-              <div className="flex items-center gap-4 px-6 py-4">
-                <SidebarTrigger />
-                <div className="text-sm text-muted-foreground">
-                  demo · 2847 tokens
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-full bg-green-100 dark:bg-green-900">
+                  <Activity className="h-6 w-6 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Generated Content
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {stats.total_generated_content}
+                  </p>
                 </div>
               </div>
-            </header>
+            </CardContent>
+          </Card>
 
-            {/* Content */}
-            <div className="p-6">{renderActiveView()}</div>
-          </main>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-full bg-blue-100 dark:bg-blue-900">
+                  <Calendar className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Active Schedules
+                  </p>
+                  <p className="text-2xl font-bold">{stats.active_schedules}</p>
+                  <p className="text-xs text-muted-foreground">
+                    of {stats.total_schedules} total
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-full bg-orange-100 dark:bg-orange-900">
+                  <BarChart3 className="h-6 w-6 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Success Rate</p>
+                  <p className="text-2xl font-bold">99%</p>
+                  <p className="text-xs text-muted-foreground">
+                    across all tasks
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-      </SidebarProvider>
-      <ProjectSettingsDialog />
+
+        {/* Tasks List */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold">Tasks</h2>
+            {tasks.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => setShowCreateTaskDialog(true)}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Task
+              </Button>
+            )}
+          </div>
+
+          {tasks.length === 0 ? (
+            <Card className="text-center py-12">
+              <CardContent className="space-y-4">
+                <Bot className="h-16 w-16 text-muted-foreground mx-auto" />
+                <div className="space-y-2">
+                  <h3 className="text-xl font-semibold">No tasks yet</h3>
+                  <p className="text-muted-foreground">
+                    Add your first AI task to start generating content
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setShowCreateTaskDialog(true)}
+                  className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create First Task
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {tasks.map((task) => (
+                <Card
+                  key={task.id}
+                  className="cursor-pointer hover:shadow-lg transition-all duration-200 group"
+                  onClick={() => navigate(`/task/${task.id}`)}
+                >
+                  <CardHeader className="pb-4">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-2 flex-1">
+                        <div className="flex items-center gap-2">
+                          {getTaskTypeIcon(task.task_type)}
+                          <CardTitle className="text-lg group-hover:text-primary transition-colors">
+                            {task.name}
+                          </CardTitle>
+                          <Badge
+                            variant={
+                              task.status === 'active' ? 'default' : 'secondary'
+                            }
+                            className="text-xs"
+                          >
+                            {task.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {task.active_schedules || 0} active
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Activity className="h-3 w-3" />
+                            {task.generated_content_count || 0} generated
+                          </span>
+                        </div>
+                        <CardDescription className="text-sm">
+                          {getTaskTypeLabel(task.task_type)} •{' '}
+                          {task.description || 'No description'}
+                        </CardDescription>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="text-xs text-muted-foreground">
+                      Created {formatDate(task.created_at)}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </section>
+      </main>
+
+      {/* Create Task Dialog */}
+      <Dialog
+        open={showCreateTaskDialog}
+        onOpenChange={setShowCreateTaskDialog}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Task</DialogTitle>
+            <DialogDescription>
+              Add a new AI task to your project
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTask} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="task-name">Task Name *</Label>
+              <Input
+                id="task-name"
+                value={createTaskForm.name}
+                onChange={(e) =>
+                  setCreateTaskForm({ ...createTaskForm, name: e.target.value })
+                }
+                placeholder="e.g., Product Images"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="task-type">Task Type *</Label>
+              <Select
+                value={createTaskForm.task_type}
+                onValueChange={(value: any) =>
+                  setCreateTaskForm({ ...createTaskForm, task_type: value })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="image-generation">
+                    <div className="flex items-center gap-2">
+                      <Image className="h-4 w-4" />
+                      Image Generation
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="print-on-shirt">
+                    <div className="flex items-center gap-2">
+                      <Shirt className="h-4 w-4" />
+                      Print on Shirt
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="journal">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Journal
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="task-description">Description</Label>
+              <Textarea
+                id="task-description"
+                value={createTaskForm.description}
+                onChange={(e) =>
+                  setCreateTaskForm({
+                    ...createTaskForm,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Describe what this task will do..."
+                rows={3}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowCreateTaskDialog(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={submitting || !createTaskForm.name.trim()}
+              >
+                {submitting ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Creating...
+                  </div>
+                ) : (
+                  'Create Task'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Project Dialog */}
+      <Dialog
+        open={showEditProjectDialog}
+        onOpenChange={setShowEditProjectDialog}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+            <DialogDescription>
+              Update your project information
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleEditProject} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="project-name">Project Name *</Label>
+              <Input
+                id="project-name"
+                value={editProjectForm.name}
+                onChange={(e) =>
+                  setEditProjectForm({
+                    ...editProjectForm,
+                    name: e.target.value,
+                  })
+                }
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="project-description">Description</Label>
+              <Textarea
+                id="project-description"
+                value={editProjectForm.description}
+                onChange={(e) =>
+                  setEditProjectForm({
+                    ...editProjectForm,
+                    description: e.target.value,
+                  })
+                }
+                rows={3}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEditProjectDialog(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={submitting || !editProjectForm.name.trim()}
+              >
+                {submitting ? (
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Updating...
+                  </div>
+                ) : (
+                  'Update Project'
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

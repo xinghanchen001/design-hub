@@ -39,7 +39,7 @@ Deno.serve(async (req: Request) => {
         *,
         schedules (
           id,
-          project_id,
+          task_id,
           name
         )
       `
@@ -65,9 +65,9 @@ Deno.serve(async (req: Request) => {
       `📋 Found ${processingContent.length} processing content item(s)`
     );
 
-    const replicateApiKey = Deno.env.get('REPLICATE_API_KEY');
+    const replicateApiKey = Deno.env.get('REPLICATE_API_TOKEN');
     if (!replicateApiKey) {
-      throw new Error('Missing REPLICATE_API_KEY');
+      throw new Error('Missing REPLICATE_API_TOKEN');
     }
 
     let completedCount = 0;
@@ -124,11 +124,9 @@ Deno.serve(async (req: Request) => {
 
               const imageBuffer = await imageResponse.arrayBuffer();
 
-              // Get project_id from schedule or use content's project_id
+              // Get task_id from schedule or use content's task_id
               const projectId =
-                content.schedules?.project_id ||
-                content.project_id ||
-                'default-project';
+                content.schedules?.task_id || content.task_id || 'default-task';
 
               // Generate consistent storage path using utility
               const fileName = generateStoragePath({

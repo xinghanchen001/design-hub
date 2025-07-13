@@ -107,7 +107,7 @@ export function parseStoragePath(path: string): {
 export function getBucketName(contentType: 'generated' | 'user-input'): string {
   switch (contentType) {
     case 'generated':
-      return 'ai-generated-images';
+      return 'generated-images';
     case 'user-input':
       return 'user-bucket-images';
     default:

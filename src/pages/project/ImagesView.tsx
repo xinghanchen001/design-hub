@@ -82,25 +82,43 @@ const ImagesView = () => {
   useEffect(() => {
     if (!user) return;
     loadImages();
-  }, [user]);
+  }, [user, project?.id]);
 
   const loadImages = async () => {
     try {
-      // Fetch generated images from the new generated_content table
+      // Get all tasks for this project (image-generation type)
+      const { data: tasks, error: tasksError } = await supabase
+        .from('tasks')
+        .select('id')
+        .eq('project_id', project?.id)
+        .eq('task_type', 'image-generation');
+
+      if (tasksError) throw tasksError;
+
+      const taskIds = tasks?.map((task) => task.id) || [];
+
+      if (taskIds.length === 0) {
+        setImages([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch generated images directly by task_id (no need for schedule lookup)
       const { data: contentData, error: contentError } = await supabase
         .from('generated_content')
         .select(
           `
           *,
-          schedules:schedule_id (
-            name,
-            project_type
+          tasks:task_id (
+            id,
+            settings
           )
         `
         )
         .eq('user_id', user?.id)
         .eq('content_type', 'image')
         .eq('generation_status', 'completed')
+        .in('task_id', taskIds)
         .not('content_url', 'is', null)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -113,28 +131,28 @@ const ImagesView = () => {
         content_url: content.content_url,
         metadata: content.metadata,
         created_at: content.created_at,
-        schedule_id: content.schedule_id,
-        schedule_name: content.schedules?.name || null,
-        project_type: content.schedules?.project_type || null,
+        schedule_id: content.schedule_id || '', // Keep for compatibility
+        schedule_name: `Task ${content.task_id?.slice(0, 8)}...`, // Generate a display name
+        project_type: content.task_type,
         generation_status: content.generation_status,
         content_type: content.content_type,
-        // Legacy fields for compatibility
+        // Legacy compatibility fields for UI
         image_url: content.content_url,
         generated_at: content.created_at,
-        project_id: content.schedule_id,
-        project_name: content.schedules?.name || null,
-        storage_path: content.metadata?.storage_path || null,
-        prompt: content.metadata?.prompt || '',
-        model_used: content.metadata?.model_used || undefined,
-        generation_time_seconds:
-          content.metadata?.generation_time_seconds || undefined,
+        project_id: project?.id,
+        project_name: project?.name,
+        storage_path: content.content_url,
+        prompt: content.tasks?.settings?.prompt || 'Generated image',
+        model_used: content.metadata?.model || 'flux-dev',
+        generation_time_seconds: content.metadata?.generation_time || 0,
         image_type: 'regular' as const,
       }));
 
       setImages(transformedImages);
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to load images');
-    } finally {
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading images:', error);
+      toast.error('Failed to load images');
       setLoading(false);
     }
   };

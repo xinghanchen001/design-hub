@@ -40,6 +40,10 @@ interface GeneratedContentWithSchedule extends GeneratedContent {
   schedules?: {
     name: string;
   };
+  tasks?: {
+    id: string;
+    settings: any;
+  };
 }
 
 const Output2View = () => {
@@ -60,26 +64,52 @@ const Output2View = () => {
     try {
       if (!user?.id) return;
 
-      // Fetch generated content for print-on-shirt projects with schedule info
+      // Get all tasks for this project (print-on-shirt type)
+      const { data: tasks, error: tasksError } = await supabase
+        .from('tasks')
+        .select('id')
+        .eq('project_id', project?.id)
+        .eq('task_type', 'print-on-shirt');
+
+      if (tasksError) throw tasksError;
+
+      const taskIds = tasks?.map((task) => task.id) || [];
+
+      if (taskIds.length === 0) {
+        setImages([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Fetch generated content directly by task_id (no need for schedule lookup)
       const { data: printImages, error } = await supabase
         .from('generated_content')
         .select(
           `
           *,
-          schedules (
-            name
+          tasks:task_id (
+            id,
+            settings
           )
         `
         )
         .eq('user_id', user.id)
         .eq('content_type', 'design') // Print-on-shirt content type
+        .in('task_id', taskIds)
         .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching print-on-shirt images:', error);
         toast.error('Failed to fetch print-on-shirt images');
       } else {
-        setImages(printImages || []);
+        // Transform data to include display name for tasks
+        const transformedImages = (printImages || []).map((content) => ({
+          ...content,
+          schedules: {
+            name: `Task ${content.task_id?.slice(0, 8)}...`,
+          },
+        }));
+        setImages(transformedImages);
       }
     } catch (error) {
       console.error('Error fetching print-on-shirt images:', error);
@@ -91,7 +121,7 @@ const Output2View = () => {
 
   useEffect(() => {
     fetchPrintOnShirtImages();
-  }, [user?.id]);
+  }, [user?.id, project?.id]);
 
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
@@ -382,7 +412,7 @@ const Output2View = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {images.map((image) => {
             const metadata = (image.metadata as any) || {};
-            const generationSettings = (image.generation_settings as any) || {};
+            const taskSettings = (image.tasks?.settings as any) || {};
 
             return (
               <Card
@@ -403,7 +433,7 @@ const Output2View = () => {
                   image.generation_status === 'completed' ? (
                     <img
                       src={image.content_url}
-                      alt={metadata.prompt || image.prompt || ''}
+                      alt={metadata.prompt || taskSettings.prompt || ''}
                       className="w-full h-full object-contain"
                     />
                   ) : (
@@ -499,10 +529,10 @@ const Output2View = () => {
                     {/* Prompt */}
                     <p
                       className="text-sm text-foreground line-clamp-1"
-                      title={metadata.prompt || image.prompt || ''}
+                      title={metadata.prompt || taskSettings.prompt || ''}
                       style={{ cursor: 'default', position: 'relative' }}
                     >
-                      {metadata.prompt || image.prompt || 'No prompt'}
+                      {metadata.prompt || taskSettings.prompt || 'No prompt'}
                     </p>
 
                     {/* Date and generation time */}

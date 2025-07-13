@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useOutletContext, useLocation } from 'react-router-dom';
+import { useOutletContext, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
 import {
   Card,
@@ -50,46 +50,33 @@ interface BucketImage {
 
 interface ProjectContext {
   project: any;
+  tasks: any[];
   fetchProjectData: () => Promise<void>;
 }
 
 const BucketView = () => {
-  const { user } = useAuth();
-  const { project } = useOutletContext<ProjectContext>();
+  const { projectType } = useParams<{ projectType: string }>();
   const location = useLocation();
+  const { user } = useAuth();
+  const { project, tasks, fetchProjectData } =
+    useOutletContext<ProjectContext>();
 
-  // Extract project type from URL path
-  const getProjectType = () => {
-    const path = location.pathname;
-    if (path.includes('/bucket/image-generation')) return 'image-generation';
-    if (path.includes('/bucket/print-on-shirt')) return 'print-on-shirt';
-    if (path.includes('/bucket/journal')) return 'journal';
-    return 'general';
-  };
+  // Extract task type from URL path
+  // URL structure: /project/:projectId/bucket/image-generation
+  const pathSegments = location.pathname.split('/');
+  const taskTypeFromPath = pathSegments[pathSegments.length - 1];
 
-  const projectType = getProjectType();
-
-  // Helper function to get display name for project type
-  const getProjectTypeDisplayName = () => {
-    switch (projectType) {
-      case 'image-generation':
-        return 'Image Generation';
-      case 'print-on-shirt':
-        return 'Print on Shirt';
-      case 'journal':
-        return 'Journal';
-      default:
-        return 'General';
-    }
-  };
+  // Handle different task type formats and provide a default
+  const actualProjectType =
+    projectType || taskTypeFromPath || 'image-generation';
 
   const [images, setImages] = useState<BucketImage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
-  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [isSelecting, setIsSelecting] = useState(false);
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
   const [isDeletingImages, setIsDeletingImages] = useState(false);
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [selectedImage, setSelectedImage] = useState<BucketImage | null>(null);
@@ -99,15 +86,15 @@ const BucketView = () => {
     setImages([]);
     setLoading(true);
 
-    if (user && project?.id) {
+    if (user && project?.id && tasks?.length) {
       fetchBucketImages();
     } else {
       setLoading(false);
     }
-  }, [user, project?.id, projectType]);
+  }, [user, project?.id, actualProjectType, tasks]);
 
   const fetchBucketImages = async () => {
-    if (!project?.id) {
+    if (!project?.id || !tasks?.length) {
       setLoading(false);
       return;
     }
@@ -118,12 +105,23 @@ const BucketView = () => {
     }
 
     try {
+      // Get task IDs for this project with the specified task type
+      const matchingTasks = tasks.filter(
+        (task) => task.task_type === actualProjectType
+      );
+      const taskIds = matchingTasks.map((task) => task.id);
+
+      if (taskIds.length === 0) {
+        setImages([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('project_bucket_images')
         .select('*')
-        .eq('project_id', project.id)
+        .in('task_id', taskIds)
         .eq('user_id', user?.id)
-        .eq('project_type', projectType) // Use project_type field instead of ilike
+        .eq('task_type', actualProjectType)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -145,6 +143,19 @@ const BucketView = () => {
 
   const uploadImages = async () => {
     if (!selectedFiles || selectedFiles.length === 0) return;
+    if (!tasks?.length) {
+      toast.error('No tasks found for this project');
+      return;
+    }
+
+    // Find a task of the matching type to associate with
+    const matchingTask = tasks.find(
+      (task) => task.task_type === actualProjectType
+    );
+    if (!matchingTask) {
+      toast.error(`No ${actualProjectType} task found in this project`);
+      return;
+    }
 
     setUploading(true);
     setUploadProgress(0);
@@ -156,7 +167,7 @@ const BucketView = () => {
           const timestamp = Date.now();
           const fileExt = file.name.split('.').pop();
           const fileName = `bucket_${timestamp}_${index}.${fileExt}`;
-          const storagePath = `${user?.id}/bucket/${project?.id}/${projectType}/${fileName}`;
+          const storagePath = `${user?.id}/bucket/${project?.id}/${actualProjectType}/${fileName}`;
 
           // Upload to Supabase storage - use the correct bucket name
           const { data: uploadData, error: uploadError } =
@@ -174,13 +185,13 @@ const BucketView = () => {
             .from('user-bucket-images') // Changed from 'user-images' to 'user-bucket-images'
             .getPublicUrl(storagePath);
 
-          // Insert into database
+          // Insert into database with task_id and task_type
           const { data: dbData, error: dbError } = await supabase
             .from('project_bucket_images')
             .insert({
-              project_id: project?.id,
+              task_id: matchingTask.id,
               user_id: user?.id,
-              project_type: projectType, // Add project_type field
+              task_type: actualProjectType,
               filename: file.name,
               storage_path: storagePath,
               image_url: urlData.publicUrl,
@@ -189,7 +200,7 @@ const BucketView = () => {
               metadata: {
                 originalName: file.name,
                 uploadedAt: new Date().toISOString(),
-                projectType: projectType,
+                taskType: actualProjectType,
               },
             })
             .select()
@@ -320,11 +331,15 @@ const BucketView = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">
-            Reference Bucket - {getProjectTypeDisplayName()}
+            Reference Bucket -{' '}
+            {actualProjectType.charAt(0).toUpperCase() +
+              actualProjectType.slice(1)}
           </h1>
           <p className="text-muted-foreground">
             Upload and manage reference images for the{' '}
-            {getProjectTypeDisplayName()} workflow
+            {actualProjectType.charAt(0).toUpperCase() +
+              actualProjectType.slice(1)}{' '}
+            workflow
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -446,7 +461,9 @@ const BucketView = () => {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>
-                {getProjectTypeDisplayName()} Bucket Images ({images.length})
+                {actualProjectType.charAt(0).toUpperCase() +
+                  actualProjectType.slice(1)}{' '}
+                Bucket Images ({images.length})
               </CardTitle>
               <CardDescription>
                 Reference images available for use in schedules

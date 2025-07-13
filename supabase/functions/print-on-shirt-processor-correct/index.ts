@@ -4,10 +4,10 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 interface PrintOnShirtSchedule {
   id: string;
   user_id: string;
-  project_id?: string;
+  task_id?: string;
   name: string;
   prompt: string;
-  project_type: string;
+  task_type: string;
   status: string;
   schedule_config: any;
   generation_settings: any;
@@ -28,58 +28,74 @@ interface BucketImage {
   updated_at: string;
 }
 
+interface ImageCombination {
+  image1: BucketImage;
+  image2: BucketImage;
+  combo_name: string;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
     'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 Deno.serve(async (req: Request) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const REPLICATE_API_TOKEN = Deno.env.get('REPLICATE_API_TOKEN');
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!REPLICATE_API_TOKEN) {
+    throw new Error('REPLICATE_API_TOKEN is not set');
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Supabase configuration is missing');
+  }
+
+  // Initialize Supabase client
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
   try {
-    // Initialize Supabase client with service role key
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    if (!supabaseServiceKey) {
-      throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
-    }
+    console.log('=== Print-on-Shirt Processor Function Called ===');
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      supabaseServiceKey
-    );
-
-    console.log('🔄 Processing print-on-shirt schedules...');
-
-    // Get all active print-on-shirt schedules that need processing
+    // Get all active print-on-shirt schedules
+    console.log('Fetching active print-on-shirt schedules...');
     const { data: schedules, error: schedulesError } = await supabase
       .from('schedules')
       .select('*')
-      .eq('project_type', 'print-on-shirt')
       .eq('status', 'active')
-      .lte('next_run', new Date().toISOString());
+      .eq('task_type', 'print-on-shirt')
+      .lte('next_run', new Date().toISOString())
+      .limit(5); // Process max 5 schedules at a time
 
     if (schedulesError) {
-      console.error('❌ Error fetching schedules:', schedulesError);
-      throw schedulesError;
+      console.error('Error fetching schedules:', schedulesError);
+      throw new Error(`Failed to fetch schedules: ${schedulesError.message}`);
     }
+
+    console.log(
+      `Found ${
+        schedules?.length || 0
+      } print-on-shirt schedules ready for processing`
+    );
 
     if (!schedules || schedules.length === 0) {
-      console.log('ℹ️ No active print-on-shirt schedules found');
       return new Response(
-        JSON.stringify({ message: 'No active schedules found' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          message: 'No print-on-shirt schedules ready for processing',
+          processed: 0,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        }
       );
-    }
-
-    console.log(`📋 Found ${schedules.length} active schedule(s)`);
-
-    const replicateApiKey = Deno.env.get('REPLICATE_API_KEY');
-    if (!replicateApiKey) {
-      throw new Error('Missing REPLICATE_API_KEY');
     }
 
     let processedCount = 0;
@@ -91,13 +107,17 @@ Deno.serve(async (req: Request) => {
       const generationSettings = (schedule.generation_settings as any) || {};
       const bucketSettings = (schedule.bucket_settings as any) || {};
 
-      // Check if we've reached the duration limit
+      // Check if we've reached the duration limit - SUPPORT BOTH OLD AND NEW FIELD NAMES
       const scheduleStart = new Date(schedule.created_at);
       const now = new Date();
       const hoursSinceStart =
         (now.getTime() - scheduleStart.getTime()) / (1000 * 60 * 60);
 
-      const durationHours = scheduleConfig.duration_hours || 24;
+      // Support both old (duration_hours) and new (schedule_duration_hours) field names
+      const durationHours =
+        scheduleConfig.schedule_duration_hours ||
+        scheduleConfig.duration_hours ||
+        24;
       if (hoursSinceStart >= durationHours) {
         console.log(
           `⏹️ Schedule ${schedule.name} has reached duration limit (${durationHours} hours)`
@@ -121,7 +141,11 @@ Deno.serve(async (req: Request) => {
         .eq('schedule_id', schedule.id)
         .eq('content_type', 'design');
 
-      const maxImages = generationSettings.max_images || 10;
+      // Support both old (max_images) and new (max_images_to_generate) field names
+      const maxImages =
+        generationSettings.max_images_to_generate ||
+        generationSettings.max_images ||
+        10;
       if (existingContentCount && existingContentCount >= maxImages) {
         console.log(
           `📸 Schedule ${schedule.name} has reached max images limit (${maxImages})`
@@ -139,307 +163,153 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        // Check if this schedule uses bucket images for batch generation
-        if (bucketSettings.use_bucket_images && schedule.project_id) {
-          console.log(
-            `🗂️ Bucket mode: Processing ${schedule.name} with bucket images`
-          );
+        // If using bucket images, get the selected images
+        if (bucketSettings.use_bucket_images) {
+          console.log(`📦 Using bucket images for schedule ${schedule.name}`);
 
-          // Initialize combinations array
-          let combinations = [];
+          const bucket1ImageIds = bucketSettings.bucket_image_1_ids || [];
+          const bucket2ImageIds = bucketSettings.bucket_image_2_ids || [];
 
-          // Check if we have multi-select arrays (new format)
-          if (
-            bucketSettings.bucket_image_1_ids &&
-            bucketSettings.bucket_image_2_ids &&
-            bucketSettings.bucket_image_1_ids.length > 0 &&
-            bucketSettings.bucket_image_2_ids.length > 0
-          ) {
+          if (bucket1ImageIds.length === 0 || bucket2ImageIds.length === 0) {
             console.log(
-              `🎯 Multi-select mode: ${bucketSettings.bucket_image_1_ids.length} images in set 1, ${bucketSettings.bucket_image_2_ids.length} images in set 2`
+              `⚠️ No bucket images configured for schedule ${schedule.name}`
             );
+            continue;
+          }
 
-            // Fetch selected bucket images for set 1
-            const { data: bucketImages1, error: bucketError1 } = await supabase
-              .from('project_bucket_images')
-              .select('*')
-              .in('id', bucketSettings.bucket_image_1_ids)
-              .eq('project_id', schedule.project_id);
+          // Get bucket images
+          const { data: bucket1Images, error: bucket1Error } = await supabase
+            .from('project_bucket_images')
+            .select('*')
+            .in('id', bucket1ImageIds)
+            .eq('user_id', schedule.user_id);
 
-            // Fetch selected bucket images for set 2
-            const { data: bucketImages2, error: bucketError2 } = await supabase
-              .from('project_bucket_images')
-              .select('*')
-              .in('id', bucketSettings.bucket_image_2_ids)
-              .eq('project_id', schedule.project_id);
+          const { data: bucket2Images, error: bucket2Error } = await supabase
+            .from('project_bucket_images')
+            .select('*')
+            .in('id', bucket2ImageIds)
+            .eq('user_id', schedule.user_id);
 
-            if (bucketError1 || bucketError2) {
-              console.error(
-                'Error fetching selected bucket images:',
-                bucketError1 || bucketError2
-              );
-              throw new Error(
-                `Failed to fetch selected bucket images: ${
-                  (bucketError1 || bucketError2)?.message
-                }`
-              );
-            }
+          if (bucket1Error || bucket2Error) {
+            console.error(
+              `❌ Error fetching bucket images:`,
+              bucket1Error || bucket2Error
+            );
+            continue;
+          }
 
-            if (!bucketImages1?.length || !bucketImages2?.length) {
-              console.log('⚠️ Some selected bucket images not found');
-              throw new Error(
-                'Some selected bucket images not found. Please check your selection.'
-              );
-            }
-
+          if (!bucket1Images || bucket1Images.length === 0) {
             console.log(
-              `📸 Found ${bucketImages1.length} images in set 1, ${bucketImages2.length} images in set 2`
+              `⚠️ No bucket1 images found for schedule ${schedule.name}`
             );
+            continue;
+          }
 
-            // Generate combinations from selected sets: Set 1 × Set 2
-            for (const image1 of bucketImages1) {
-              for (const image2 of bucketImages2) {
-                combinations.push({
-                  image1,
-                  image2,
-                  combo_name: `${image1.filename} × ${image2.filename}`,
-                });
-              }
-            }
-          } else {
-            // Fallback to old logic - fetch all bucket images for this project
+          if (!bucket2Images || bucket2Images.length === 0) {
             console.log(
-              `🔄 Fallback mode: Using all bucket images for combinations`
+              `⚠️ No bucket2 images found for schedule ${schedule.name}`
             );
+            continue;
+          }
 
-            const { data: bucketImages, error: bucketError } = await supabase
-              .from('project_bucket_images')
-              .select('*')
-              .eq('project_id', schedule.project_id)
-              .eq('user_id', schedule.user_id)
-              .eq('project_type', 'print-on-shirt')
-              .order('created_at', { ascending: false });
-
-            if (bucketError) {
-              console.error('Error fetching bucket images:', bucketError);
-              throw new Error(
-                `Failed to fetch bucket images: ${bucketError.message}`
-              );
-            }
-
-            if (!bucketImages || bucketImages.length === 0) {
-              console.log('⚠️ No bucket images found for batch generation');
-              throw new Error(
-                'No bucket images found for batch generation. Please upload images to the bucket first.'
-              );
-            }
-
-            console.log(
-              `📸 Found ${bucketImages.length} bucket images for combinations`
-            );
-
-            // Generate all possible combinations of Image 1 × Image 2
-            for (const image1 of bucketImages) {
-              for (const image2 of bucketImages) {
-                if (image1.id !== image2.id) {
-                  // Don't combine image with itself
-                  combinations.push({
-                    image1,
-                    image2,
-                    combo_name: `${image1.filename} × ${image2.filename}`,
-                  });
-                }
-              }
+          // Generate combinations
+          const combinations: ImageCombination[] = [];
+          for (const image1 of bucket1Images) {
+            for (const image2 of bucket2Images) {
+              combinations.push({
+                image1: image1 as BucketImage,
+                image2: image2 as BucketImage,
+                combo_name: `${image1.filename.split('.')[0]}_${
+                  image2.filename.split('.')[0]
+                }`,
+              });
             }
           }
 
-          console.log(`🔀 Generated ${combinations.length} image combinations`);
-
-          // Limit the number of combinations to prevent overwhelming the system
-          const maxCombinations = Math.min(combinations.length, maxImages);
-          const selectedCombinations = combinations.slice(0, maxCombinations);
-
           console.log(
-            `🎯 Processing ${selectedCombinations.length} combinations`
+            `🎯 Generated ${combinations.length} combinations for schedule ${schedule.name}`
           );
 
-          // Create predictions for each combination
-          for (let i = 0; i < selectedCombinations.length; i++) {
-            const { image1, image2, combo_name } = selectedCombinations[i];
+          // Process combinations (limit to avoid too many API calls)
+          const maxCombinations = Math.min(combinations.length, 3);
+          const selectedCombinations = combinations.slice(0, maxCombinations);
 
-            try {
-              console.log(
-                `🎨 Generating combination ${i + 1}/${
-                  selectedCombinations.length
-                }: ${combo_name}`
-              );
+          for (const combination of selectedCombinations) {
+            console.log(`🎨 Processing combination: ${combination.combo_name}`);
 
-              const prediction = await fetch(
-                'https://api.replicate.com/v1/models/flux-kontext-apps/multi-image-kontext-max/predictions',
-                {
-                  method: 'POST',
-                  headers: {
-                    Authorization: `Token ${replicateApiKey}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    input: {
+            // Call Replicate API
+            const replicateResponse = await fetch(
+              'https://api.replicate.com/v1/predictions',
+              {
+                method: 'POST',
+                headers: {
+                  Authorization: `Token ${REPLICATE_API_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  version: 'flux-kontext-apps/multi-image-kontext-max',
+                                      input: {
                       prompt: schedule.prompt,
-                      input_image_1: image1.image_url,
-                      input_image_2: image2.image_url,
+                      input_image_1: combination.image1.image_url,
+                      input_image_2: combination.image2.image_url,
                       aspect_ratio: generationSettings.aspect_ratio || '1:1',
-                      output_format: 'png',
-                      safety_tolerance: 1,
+                      output_format: generationSettings.output_format || 'png',
+                      safety_tolerance: generationSettings.safety_tolerance || 1,
+                      seed: Math.floor(Math.random() * 1000000),
                     },
-                  }),
-                }
-              );
-
-              if (!prediction.ok) {
-                const errorText = await prediction.text();
-                console.error(
-                  `❌ Replicate API error for ${combo_name}:`,
-                  errorText
-                );
-                continue; // Skip this combination and continue with others
+                }),
               }
+            );
 
-              const predictionData = await prediction.json();
-              console.log(
-                `✅ Prediction created for ${combo_name}:`,
-                predictionData.id
-              );
-
-              // Store the generation record in the database
-              const { error: insertError } = await supabase
-                .from('generated_content')
-                .insert({
-                  schedule_id: schedule.id,
-                  user_id: schedule.user_id,
-                  project_id: schedule.project_id,
-                  content_type: 'design',
-                  prompt: schedule.prompt,
-                  generation_status: 'processing',
-                  metadata: {
-                    prediction_id: predictionData.id,
-                    input_image_1_url: image1.image_url,
-                    input_image_2_url: image2.image_url,
-                    bucket_image_1_id: image1.id,
-                    bucket_image_2_id: image2.id,
-                    aspect_ratio: generationSettings.aspect_ratio || '1:1',
-                    output_format: 'png',
-                    safety_tolerance: 1,
-                    combo_name: combo_name,
-                    model_used: 'flux-kontext-apps/multi-image-kontext-max',
-                    generation_settings: generationSettings,
-                  },
-                });
-
-              if (insertError) {
-                console.error(
-                  `❌ Error inserting content record for ${combo_name}:`,
-                  insertError
-                );
-                continue; // Continue with other combinations
-              }
-
-              console.log(
-                `✅ Successfully queued generation for ${combo_name}`
-              );
-            } catch (error) {
+            if (!replicateResponse.ok) {
               console.error(
-                `❌ Error processing combination ${combo_name}:`,
-                error
+                `❌ Replicate API error for combination ${combination.combo_name}:`,
+                replicateResponse.status,
+                replicateResponse.statusText
               );
+              const errorText = await replicateResponse.text();
+              console.error('Error details:', errorText);
+              continue; // Continue with other combinations
+            }
+
+            const predictionData = await replicateResponse.json();
+            console.log(`✅ Prediction created for ${combination.combo_name}:`, predictionData.id);
+
+            // Store the generation record in the database
+            const { error: insertError } = await supabase
+              .from('generated_content')
+              .insert({
+                schedule_id: schedule.id,
+                user_id: schedule.user_id,
+                task_id: schedule.task_id,
+                task_type: schedule.task_type,
+                content_type: 'design',
+                generation_status: 'processing',
+                external_job_id: predictionData.id,
+                metadata: {
+                  prediction_id: predictionData.id,
+                  combination_name: combination.combo_name,
+                  input_image_1_url: combination.image1.image_url,
+                  input_image_2_url: combination.image2.image_url,
+                  aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                  output_format: generationSettings.output_format || 'png',
+                  safety_tolerance: generationSettings.safety_tolerance || 1,
+                  model_used: 'flux-kontext-apps/multi-image-kontext-max',
+                  generation_settings: generationSettings,
+                },
+              });
+
+            if (insertError) {
+              console.error(`❌ Error inserting content record for ${combination.combo_name}:`, insertError);
               continue; // Continue with other combinations
             }
           }
 
-          // Update the schedule's next run time
-          const intervalMinutes = scheduleConfig.interval_minutes || 60;
-          const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
-
-          const { error: updateError } = await supabase
-            .from('schedules')
-            .update({ next_run: nextRun.toISOString() })
-            .eq('id', schedule.id);
-
-          if (updateError) {
-            console.error(`❌ Error updating schedule:`, updateError);
-          }
-
-          processedCount++;
-          console.log(
-            `✅ Successfully processed ${schedule.name} with ${selectedCombinations.length} combinations`
-          );
-        } else {
-          // Original single image pair generation logic
-          console.log(
-            `🎨 Single mode: Starting image generation for ${schedule.name}`
-          );
-          console.log(`📸 Image 1: ${generationSettings.input_image_1_url}`);
-          console.log(`👕 Image 2: ${generationSettings.input_image_2_url}`);
-          console.log(`💭 Prompt: ${schedule.prompt}`);
-
-          const prediction = await fetch(
-            'https://api.replicate.com/v1/models/flux-kontext-apps/multi-image-kontext-max/predictions',
-            {
-              method: 'POST',
-              headers: {
-                Authorization: `Token ${replicateApiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                input: {
-                  prompt: schedule.prompt,
-                  input_image_1: generationSettings.input_image_1_url,
-                  input_image_2: generationSettings.input_image_2_url,
-                  aspect_ratio: generationSettings.aspect_ratio || '1:1',
-                  output_format: 'png',
-                  safety_tolerance: 1,
-                },
-              }),
-            }
-          );
-
-          if (!prediction.ok) {
-            const errorText = await prediction.text();
-            console.error(`❌ Replicate API error:`, errorText);
-            throw new Error(`Replicate API error: ${errorText}`);
-          }
-
-          const predictionData = await prediction.json();
-          console.log(`✅ Prediction created:`, predictionData.id);
-
-          // Store the generation record in the database
-          const { error: insertError } = await supabase
-            .from('generated_content')
-            .insert({
-              schedule_id: schedule.id,
-              user_id: schedule.user_id,
-              project_id: schedule.project_id,
-              content_type: 'design',
-              prompt: schedule.prompt,
-              generation_status: 'processing',
-              metadata: {
-                prediction_id: predictionData.id,
-                input_image_1_url: generationSettings.input_image_1_url,
-                input_image_2_url: generationSettings.input_image_2_url,
-                aspect_ratio: generationSettings.aspect_ratio || '1:1',
-                output_format: 'png',
-                safety_tolerance: 1,
-                model_used: 'flux-kontext-apps/multi-image-kontext-max',
-                generation_settings: generationSettings,
-              },
-            });
-
-          if (insertError) {
-            console.error(`❌ Error inserting content record:`, insertError);
-            throw insertError;
-          }
-
-          // Update the schedule's next run time
-          const intervalMinutes = scheduleConfig.interval_minutes || 60;
+          // Update the schedule's next run time - SUPPORT BOTH OLD AND NEW FIELD NAMES
+          const intervalMinutes =
+            scheduleConfig.generation_interval_minutes ||
+            scheduleConfig.interval_minutes ||
+            60;
           const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
 
           const { error: updateError } = await supabase
@@ -452,54 +322,136 @@ Deno.serve(async (req: Request) => {
             throw updateError;
           }
 
-          processedCount++;
           console.log(`✅ Successfully processed ${schedule.name}`);
+          processedCount++;
+        } else {
+        // Use direct URLs from generation settings
+        console.log(
+          `🖼️ Using direct image URLs for schedule ${schedule.name}`
+        );
+
+        const image1Url = generationSettings.input_image_1_url;
+        const image2Url = generationSettings.input_image_2_url;
+
+        if (!image1Url || !image2Url) {
+          console.log(`⚠️ Missing image URLs for schedule ${schedule.name}`);
+          continue;
         }
+
+        // Call Replicate API
+        const replicateResponse = await fetch(
+          'https://api.replicate.com/v1/predictions',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Token ${REPLICATE_API_TOKEN}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              version: 'flux-kontext-apps/multi-image-kontext-max',
+              input: {
+                prompt: schedule.prompt,
+                input_image_1: image1Url,
+                input_image_2: image2Url,
+                aspect_ratio: generationSettings.aspect_ratio || '1:1',
+                output_format: generationSettings.output_format || 'png',
+                safety_tolerance: generationSettings.safety_tolerance || 1,
+                seed: Math.floor(Math.random() * 1000000),
+              },
+            }),
+          }
+        );
+
+        if (!replicateResponse.ok) {
+          console.error(
+            `❌ Replicate API error for schedule ${schedule.name}:`,
+            replicateResponse.status,
+            replicateResponse.statusText
+          );
+          continue;
+        }
+
+        const predictionData = await replicateResponse.json();
+        console.log(`✅ Prediction created:`, predictionData.id);
+
+        // Store the generation record in the database
+        const { error: insertError } = await supabase
+          .from('generated_content')
+          .insert({
+            schedule_id: schedule.id,
+            user_id: schedule.user_id,
+            task_id: schedule.task_id,
+            task_type: schedule.task_type,
+            content_type: 'design',
+            generation_status: 'processing',
+            external_job_id: predictionData.id,
+            metadata: {
+              prediction_id: predictionData.id,
+              input_image_1_url: generationSettings.input_image_1_url,
+              input_image_2_url: generationSettings.input_image_2_url,
+              aspect_ratio: generationSettings.aspect_ratio || '1:1',
+              output_format: generationSettings.output_format || 'png',
+              safety_tolerance: generationSettings.safety_tolerance || 1,
+              model_used: 'flux-kontext-apps/multi-image-kontext-max',
+              generation_settings: generationSettings,
+            },
+          });
+
+        if (insertError) {
+          console.error(`❌ Error inserting content record:`, insertError);
+          throw insertError;
+        }
+
+        // Update the schedule's next run time - SUPPORT BOTH OLD AND NEW FIELD NAMES
+        const intervalMinutes =
+          scheduleConfig.generation_interval_minutes ||
+          scheduleConfig.interval_minutes ||
+          60;
+        const nextRun = new Date(Date.now() + intervalMinutes * 60 * 1000);
+
+        const { error: updateError } = await supabase
+          .from('schedules')
+          .update({ next_run: nextRun.toISOString() })
+          .eq('id', schedule.id);
+
+        if (updateError) {
+          console.error(`❌ Error updating schedule:`, updateError);
+          throw updateError;
+        }
+
+        processedCount++;
+        console.log(`✅ Successfully processed ${schedule.name}`);
       } catch (error) {
         console.error(`❌ Error processing schedule ${schedule.name}:`, error);
-
-        // Store the error in the database
-        await supabase.from('generated_content').insert({
-          schedule_id: schedule.id,
-          user_id: schedule.user_id,
-          project_id: schedule.project_id,
-          content_type: 'design',
-          prompt: schedule.prompt,
-          generation_status: 'failed',
-          metadata: {
-            error_message: error.message,
-            input_image_1_url: generationSettings.input_image_1_url,
-            input_image_2_url: generationSettings.input_image_2_url,
-            aspect_ratio: generationSettings.aspect_ratio || '1:1',
-          },
-        });
-
-        continue;
       }
     }
 
     console.log(
-      `🎉 Completed processing. Generated ${processedCount} new designs.`
+      `=== Print-on-Shirt Processor completed: ${processedCount}/${schedules.length} schedules processed successfully ===`
     );
 
     return new Response(
       JSON.stringify({
-        success: true,
-        message: `Processed ${processedCount} schedules`,
-        processed_schedules: processedCount,
+        message: 'Print-on-shirt schedules processed successfully',
+        processed: processedCount,
+        total: schedules.length,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      }
     );
   } catch (error) {
-    console.error('❌ Error in print-on-shirt processor:', error);
+    console.error('Error in print-on-shirt-processor-correct function:', error);
+
     return new Response(
       JSON.stringify({
         error: error.message,
-        details: 'Check function logs for more information',
+        success: false,
       }),
       {
-        status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
       }
     );
   }

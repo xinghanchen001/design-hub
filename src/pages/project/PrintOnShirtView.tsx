@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
 import { useAuth } from '@/components/AuthProvider';
 import {
@@ -61,6 +61,15 @@ interface PrintOnShirtSchedule extends Schedule {
   total_images?: number;
   completed_images?: number;
   failed_images?: number;
+  // Flattened schedule_config properties
+  generation_interval_minutes?: number;
+  schedule_duration_hours?: number;
+  schedule_enabled?: boolean;
+  // Flattened generation_settings properties
+  max_images_to_generate?: number;
+  aspect_ratio?: string;
+  input_image_1_url?: string;
+  input_image_2_url?: string;
 }
 
 interface FormData {
@@ -81,8 +90,9 @@ interface FormData {
 
 const PrintOnShirtView = () => {
   const navigate = useNavigate();
-  const { project, fetchProjectData } = useOutletContext<{
+  const { project, tasks, fetchProjectData } = useOutletContext<{
     project: Project;
+    tasks: any[];
     fetchProjectData: () => Promise<void>;
   }>();
   const { user } = useAuth();
@@ -105,6 +115,10 @@ const PrintOnShirtView = () => {
     BucketImage[]
   >([]);
   const [useBucketImages, setUseBucketImages] = useState(false);
+
+  // File input refs for triggering file upload
+  const fileInputRef1 = useRef<HTMLInputElement>(null);
+  const fileInputRef2 = useRef<HTMLInputElement>(null);
 
   // Form state - updated for multi-select
   const [formData, setFormData] = useState({
@@ -142,6 +156,17 @@ const PrintOnShirtView = () => {
 
   const loadSchedules = async () => {
     try {
+      // Get task IDs for print-on-shirt tasks in this project
+      const printOnShirtTasks =
+        tasks?.filter((task) => task.task_type === 'print-on-shirt') || [];
+      const taskIds = printOnShirtTasks.map((task) => task.id);
+
+      if (taskIds.length === 0) {
+        setSchedules([]);
+        setLoading(false);
+        return;
+      }
+
       // Fetch schedules with content statistics
       const { data: schedulesData, error: schedulesError } = await supabase
         .from('schedules')
@@ -155,17 +180,31 @@ const PrintOnShirtView = () => {
         `
         )
         .eq('user_id', user?.id)
-        .eq('project_type', 'print-on-shirt')
+        .in('task_id', taskIds)
         .order('created_at', { ascending: false });
 
       if (schedulesError) throw schedulesError;
 
-      // Transform data to include statistics
+      // Transform data to include statistics and flatten JSON fields
       const schedulesWithStats =
         schedulesData?.map((schedule) => {
           const contents = (schedule as any).generated_content || [];
+          const scheduleConfig = (schedule.schedule_config as any) || {};
+          const generationSettings =
+            (schedule.generation_settings as any) || {};
+
           return {
             ...schedule,
+            // Flatten schedule_config
+            generation_interval_minutes: scheduleConfig.interval_minutes,
+            schedule_duration_hours: scheduleConfig.duration_hours,
+            schedule_enabled: scheduleConfig.enabled,
+            // Flatten generation_settings
+            max_images_to_generate: generationSettings.max_images,
+            aspect_ratio: generationSettings.aspect_ratio,
+            input_image_1_url: generationSettings.input_image_1_url,
+            input_image_2_url: generationSettings.input_image_2_url,
+            // Add statistics
             total_images: contents.length,
             completed_images: contents.filter(
               (content: any) => content.generation_status === 'completed'
@@ -188,11 +227,22 @@ const PrintOnShirtView = () => {
   const loadBucketImages = async () => {
     setLoadingBucketImages(true);
     try {
+      // Get task IDs for print-on-shirt tasks in this project
+      const printOnShirtTasks =
+        tasks?.filter((task) => task.task_type === 'print-on-shirt') || [];
+      const taskIds = printOnShirtTasks.map((task) => task.id);
+
+      if (taskIds.length === 0) {
+        setBucketImages([]);
+        setLoadingBucketImages(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('project_bucket_images')
         .select('*')
-        .eq('project_id', project.id)
-        .eq('project_type', 'print-on-shirt')
+        .in('task_id', taskIds)
+        .eq('task_type', 'print-on-shirt')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false });
 
@@ -313,6 +363,83 @@ const PrintOnShirtView = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  // Trigger file input for bucket upload
+  const triggerFileUpload = (imageNumber: 1 | 2) => {
+    if (imageNumber === 1) {
+      fileInputRef1.current?.click();
+    } else {
+      fileInputRef2.current?.click();
+    }
+  };
+
+  // Handle bucket image upload
+  const handleBucketImageUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    imageNumber: 1 | 2
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `bucket_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(7)}.${fileExt}`;
+
+      // Upload to user-bucket-images
+      const { error: uploadError } = await supabase.storage
+        .from('user-bucket-images')
+        .upload(
+          `${user?.id}/bucket/${project.id}/print-on-shirt/${fileName}`,
+          file
+        );
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const {
+        data: { publicUrl },
+      } = supabase.storage
+        .from('user-bucket-images')
+        .getPublicUrl(
+          `${user?.id}/bucket/${project.id}/print-on-shirt/${fileName}`
+        );
+
+      // Save to bucket images table
+      const { data: bucketImage, error: insertError } = await supabase
+        .from('project_bucket_images')
+        .insert({
+          user_id: user?.id,
+          project_id: project.id,
+          task_type: 'print-on-shirt',
+          filename: file.name,
+          original_filename: file.name,
+          image_url: publicUrl,
+          file_size: file.size,
+          content_type: file.type,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      toast.success('Image uploaded to bucket successfully!');
+
+      // Refresh bucket images
+      await loadBucketImages();
+
+      // Auto-select the uploaded image
+      if (bucketImage) {
+        handleBucketImageSelect(bucketImage, imageNumber);
+      }
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to upload image to bucket');
+    }
+
+    // Reset file input
+    event.target.value = '';
+  };
+
   const handleImageUpload = async (file: File, imageNumber: 1 | 2) => {
     if (!file) return;
 
@@ -362,10 +489,19 @@ const PrintOnShirtView = () => {
 
     setIsSaving(true);
     try {
+      // Find or create a print-on-shirt task for this project
+      const printOnShirtTask = tasks?.find(
+        (task) => task.task_type === 'print-on-shirt'
+      );
+      if (!printOnShirtTask) {
+        toast.error('No print-on-shirt task found in this project');
+        return;
+      }
+
       const scheduleData = {
         user_id: user?.id,
-        project_id: project.id,
-        project_type: 'print-on-shirt',
+        task_id: printOnShirtTask.id,
+        task_type: 'print-on-shirt',
         name: formData.name,
         description: formData.description || null,
         prompt: formData.prompt,
@@ -495,8 +631,17 @@ const PrintOnShirtView = () => {
 
     setIsSaving(true);
     try {
+      // Find the print-on-shirt task for this project
+      const printOnShirtTask = tasks?.find(
+        (task) => task.task_type === 'print-on-shirt'
+      );
+      if (!printOnShirtTask) {
+        toast.error('No print-on-shirt task found in this project');
+        return;
+      }
+
       const updateData = {
-        project_id: project.id,
+        task_id: printOnShirtTask.id,
         name: formData.name,
         description: formData.description || null,
         prompt: formData.prompt,
@@ -849,7 +994,25 @@ const PrintOnShirtView = () => {
                         <h4 className="text-sm font-medium mb-2">
                           Available Images (click to select/deselect)
                         </h4>
-                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                        <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto border rounded-lg p-4">
+                          {/* Upload trigger card */}
+                          <div
+                            className="relative group cursor-pointer"
+                            onClick={() => triggerFileUpload(1)}
+                          >
+                            <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-dashed border-border/50 hover:border-primary transition-colors flex items-center justify-center">
+                              <div className="text-center">
+                                <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+                                <p className="text-xs text-muted-foreground">
+                                  Import
+                                </p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 truncate text-center">
+                              Import from local
+                            </p>
+                          </div>
+
                           {bucketImages.map((image) => {
                             const isSelected = selectedBucketImages1.some(
                               (img) => img.id === image.id
@@ -989,7 +1152,25 @@ const PrintOnShirtView = () => {
                         <h4 className="text-sm font-medium mb-2">
                           Available Images (click to select/deselect)
                         </h4>
-                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                        <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto border rounded-lg p-4">
+                          {/* Upload trigger card */}
+                          <div
+                            className="relative group cursor-pointer"
+                            onClick={() => triggerFileUpload(2)}
+                          >
+                            <div className="aspect-square rounded-lg overflow-hidden bg-muted border border-dashed border-border/50 hover:border-primary transition-colors flex items-center justify-center">
+                              <div className="text-center">
+                                <Upload className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
+                                <p className="text-xs text-muted-foreground">
+                                  Import
+                                </p>
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 truncate text-center">
+                              Import from local
+                            </p>
+                          </div>
+
                           {bucketImages.map((image) => {
                             const isSelected = selectedBucketImages2.some(
                               (img) => img.id === image.id
@@ -1344,7 +1525,7 @@ const PrintOnShirtView = () => {
                         <h4 className="text-sm font-medium mb-2">
                           Available Images (click to select/deselect)
                         </h4>
-                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                        <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto border rounded-lg p-4">
                           {bucketImages.map((image) => {
                             const isSelected = selectedBucketImages1.some(
                               (img) => img.id === image.id
@@ -1484,7 +1665,7 @@ const PrintOnShirtView = () => {
                         <h4 className="text-sm font-medium mb-2">
                           Available Images (click to select/deselect)
                         </h4>
-                        <div className="grid grid-cols-2 gap-4 max-h-64 overflow-y-auto border rounded-lg p-4">
+                        <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto border rounded-lg p-4">
                           {bucketImages.map((image) => {
                             const isSelected = selectedBucketImages2.some(
                               (img) => img.id === image.id
@@ -1845,7 +2026,7 @@ const PrintOnShirtView = () => {
                       <div className="text-muted-foreground">Total</div>
                     </div>
                   </div>
-                  {!schedule.status === 'active' &&
+                  {schedule.status !== 'active' &&
                     schedule.total_images &&
                     schedule.total_images >=
                       schedule.max_images_to_generate && (
@@ -1860,7 +2041,7 @@ const PrintOnShirtView = () => {
                         </button>
                       </div>
                     )}
-                  {!schedule.status === 'active' &&
+                  {schedule.status !== 'active' &&
                     (!schedule.total_images ||
                       schedule.total_images <
                         schedule.max_images_to_generate) && (
@@ -1910,6 +2091,22 @@ const PrintOnShirtView = () => {
           </div>
         )}
       </div>
+
+      {/* Hidden file inputs for bucket upload */}
+      <input
+        ref={fileInputRef1}
+        type="file"
+        accept="image/*"
+        onChange={(e) => handleBucketImageUpload(e, 1)}
+        style={{ display: 'none' }}
+      />
+      <input
+        ref={fileInputRef2}
+        type="file"
+        accept="image/*"
+        onChange={(e) => handleBucketImageUpload(e, 2)}
+        style={{ display: 'none' }}
+      />
     </div>
   );
 };
