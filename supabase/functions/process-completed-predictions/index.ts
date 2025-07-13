@@ -1,9 +1,46 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import {
-  generateStoragePath,
-  getBucketName,
-} from '../_shared/storage-utils.ts';
+
+// Inline storage utilities to avoid import issues
+type ProjectType =
+  | 'image-generation'
+  | 'print-on-shirt'
+  | 'journal'
+  | 'video-generation';
+
+function generateStoragePath(options: {
+  userId: string;
+  projectId: string;
+  projectType: ProjectType;
+  timestamp?: number;
+}): string {
+  const { userId, projectId, projectType, timestamp } = options;
+  const ts = timestamp || Date.now();
+
+  switch (projectType) {
+    case 'image-generation':
+      return `${userId}/image-generation/${projectId}/generated_${ts}.png`;
+    case 'print-on-shirt':
+      return `${userId}/print-on-shirt/${projectId}/design_${ts}.png`;
+    case 'journal':
+      return `${userId}/journal/${projectId}/journal_${ts}.png`;
+    case 'video-generation':
+      return `${userId}/video-generation/${projectId}/video_${ts}.mp4`;
+    default:
+      throw new Error(`Unknown project type: ${projectType}`);
+  }
+}
+
+function getBucketName(contentType: 'generated' | 'user-input'): string {
+  switch (contentType) {
+    case 'generated':
+      return 'generated-images';
+    case 'user-input':
+      return 'user-bucket-images';
+    default:
+      throw new Error(`Unknown content type: ${contentType}`);
+  }
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,7 +82,7 @@ Deno.serve(async (req: Request) => {
       `
       )
       .eq('generation_status', 'processing')
-      .eq('content_type', 'design')
+      .in('content_type', ['design', 'video'])
       .not('metadata->prediction_id', 'is', null);
 
     if (fetchError) {
@@ -110,38 +147,56 @@ Deno.serve(async (req: Request) => {
         if (prediction.status === 'succeeded') {
           console.log(`✅ Prediction ${predictionId} completed successfully`);
 
-          // Download and store the generated image
-          const imageUrl = prediction.output;
-          if (imageUrl) {
+          // Download and store the generated content (image or video)
+          const contentUrl = prediction.output;
+          if (contentUrl) {
             try {
-              console.log(`⬇️ Downloading image from: ${imageUrl}`);
-              const imageResponse = await fetch(imageUrl);
-              if (!imageResponse.ok) {
+              const isVideo = content.content_type === 'video';
+              console.log(
+                `⬇️ Downloading ${
+                  isVideo ? 'video' : 'image'
+                } from: ${contentUrl}`
+              );
+
+              const contentResponse = await fetch(contentUrl);
+              if (!contentResponse.ok) {
                 throw new Error(
-                  `Failed to download image: ${imageResponse.statusText}`
+                  `Failed to download ${isVideo ? 'video' : 'image'}: ${
+                    contentResponse.statusText
+                  }`
                 );
               }
 
-              const imageBuffer = await imageResponse.arrayBuffer();
+              const contentBuffer = await contentResponse.arrayBuffer();
 
               // Get task_id from schedule or use content's task_id
               const projectId =
                 content.schedules?.task_id || content.task_id || 'default-task';
 
               // Generate consistent storage path using utility
+              const taskType = content.task_type || 'default';
               const fileName = generateStoragePath({
                 userId: content.user_id,
                 projectId: projectId,
-                projectType: 'print-on-shirt',
+                projectType: taskType as ProjectType,
                 timestamp: Date.now(),
               });
 
-              console.log(`📤 Uploading to storage: ${fileName}`);
+              // Determine content type and file extension
+              const contentType = isVideo ? 'video/mp4' : 'image/png';
+              const fileExtension = isVideo ? '.mp4' : '.png';
+              const fileNameWithExt = fileName.endsWith(fileExtension)
+                ? fileName
+                : fileName + fileExtension;
+
+              console.log(
+                `📤 Uploading to storage: ${fileNameWithExt} (${contentType})`
+              );
               const bucketName = getBucketName('generated');
               const { error: uploadError } = await supabase.storage
                 .from(bucketName)
-                .upload(fileName, imageBuffer, {
-                  contentType: 'image/png',
+                .upload(fileNameWithExt, contentBuffer, {
+                  contentType: contentType,
                   upsert: false,
                 });
 
@@ -153,14 +208,16 @@ Deno.serve(async (req: Request) => {
               // Get public URL
               const {
                 data: { publicUrl },
-              } = supabase.storage.from(bucketName).getPublicUrl(fileName);
+              } = supabase.storage
+                .from(bucketName)
+                .getPublicUrl(fileNameWithExt);
 
               console.log(`🔗 Public URL: ${publicUrl}`);
 
               // Update database record
               const updatedMetadata = {
                 ...metadata,
-                replicate_output_url: imageUrl,
+                replicate_output_url: contentUrl,
                 generation_time_seconds: metadata.generation_time_seconds || 0,
                 prediction_id: predictionId,
               };
@@ -170,7 +227,7 @@ Deno.serve(async (req: Request) => {
                 .update({
                   generation_status: 'completed',
                   content_url: publicUrl,
-                  storage_path: fileName,
+                  storage_path: fileNameWithExt,
                   metadata: updatedMetadata,
                 })
                 .eq('id', content.id);
@@ -184,7 +241,9 @@ Deno.serve(async (req: Request) => {
               console.log(`✅ Successfully processed content: ${content.id}`);
             } catch (downloadError) {
               console.error(
-                `❌ Error downloading/storing image:`,
+                `❌ Error downloading/storing ${
+                  content.content_type === 'video' ? 'video' : 'image'
+                }:`,
                 downloadError
               );
 

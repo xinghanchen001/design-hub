@@ -45,6 +45,7 @@ import {
   Home,
   Activity,
   Loader2,
+  Video,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -72,6 +73,7 @@ const ProjectLayout = () => {
     imageGeneration: true,
     printOnShirt: true,
     journal: true,
+    videoGeneration: true,
   });
 
   useEffect(() => {
@@ -569,6 +571,111 @@ const ProjectLayout = () => {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to="bucket/journal"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-foreground font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Folder className="h-4 w-4" />
+                      <span>Reference Bucket</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          )}
+        </SidebarGroup>
+
+        {/* Video Generation Schedule Group */}
+        <SidebarGroup>
+          <SidebarGroupLabel
+            className="flex items-center justify-between cursor-pointer"
+            onClick={() => toggleGroup('videoGeneration')}
+          >
+            <div className="flex items-center gap-2">
+              <Video className="h-4 w-4" />
+              <span>Video Generation</span>
+              <div className="flex items-center gap-1 ml-1">
+                {getActiveScheduleCountByType('video-generation') > 0 && (
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  ({getActiveScheduleCountByType('video-generation')}/
+                  {getTotalScheduleCountByType('video-generation')})
+                </span>
+              </div>
+            </div>
+            {expandedGroups.videoGeneration ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </SidebarGroupLabel>
+          {expandedGroups.videoGeneration && (
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="video"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-foreground font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Calendar className="h-4 w-4" />
+                      <span>Schedules</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="queue"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-foreground font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Clock className="h-4 w-4" />
+                      <span>Generation Queue</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="video-output"
+                      className={({ isActive }) => `
+                        flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
+                        ${
+                          isActive
+                            ? 'bg-muted text-foreground font-medium'
+                            : 'hover:bg-muted/50'
+                        }
+                      `}
+                    >
+                      <Video className="h-4 w-4" />
+                      <span>Generated Videos</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="bucket/video-generation"
                       className={({ isActive }) => `
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${

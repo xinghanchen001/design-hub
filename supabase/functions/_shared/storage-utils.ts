@@ -2,7 +2,11 @@
  * Storage utility functions for consistent path generation across all projects
  */
 
-export type ProjectType = 'image-generation' | 'print-on-shirt' | 'journal';
+export type ProjectType =
+  | 'image-generation'
+  | 'print-on-shirt'
+  | 'journal'
+  | 'video-generation';
 
 export interface StoragePathOptions {
   userId: string;
@@ -33,6 +37,10 @@ export function generateStoragePath(options: StoragePathOptions): string {
     case 'journal':
       // Journal: user_id/journal/project_id/journal_timestamp.png
       return `${userId}/journal/${projectId}/journal_${ts}.png`;
+
+    case 'video-generation':
+      // Video Generation: user_id/video-generation/project_id/video_timestamp.mp4
+      return `${userId}/video-generation/${projectId}/video_${ts}.mp4`;
 
     default:
       throw new Error(`Unknown project type: ${projectType}`);
@@ -90,7 +98,12 @@ export function parseStoragePath(path: string): {
   // Check if it's a project-based path
   if (
     parts.length >= 4 &&
-    ['image-generation', 'print-on-shirt', 'journal'].includes(parts[1])
+    [
+      'image-generation',
+      'print-on-shirt',
+      'journal',
+      'video-generation',
+    ].includes(parts[1])
   ) {
     const projectType = parts[1] as ProjectType;
     const projectId = parts[2];
