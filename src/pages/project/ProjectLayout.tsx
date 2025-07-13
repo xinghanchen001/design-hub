@@ -231,9 +231,9 @@ const ProjectLayout = () => {
         <div className="p-4 border-b border-border">
           <div className="flex items-center gap-2 mb-2">
             <div className="p-1.5 rounded-lg bg-gradient-primary">
-              <Bot className="h-4 w-4 text-primary-foreground" />
+              <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-medium text-foreground">
+            <span className="text-sm font-medium text-muted-foreground">
               Design Hub
             </span>
           </div>
@@ -258,7 +258,7 @@ const ProjectLayout = () => {
                       flex items-center gap-2 px-2 py-2 rounded-md transition-colors
                       ${
                         isActive
-                          ? 'bg-muted text-primary font-medium'
+                          ? 'bg-muted text-foreground font-medium'
                           : 'hover:bg-muted/50'
                       }
                     `}
@@ -284,7 +284,7 @@ const ProjectLayout = () => {
               <span>Image Generation</span>
               <div className="flex items-center gap-1 ml-1">
                 {getActiveScheduleCountByType('image-generation') > 0 && (
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 )}
                 <span className="text-xs text-muted-foreground">
                   ({getActiveScheduleCountByType('image-generation')}/
@@ -309,7 +309,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -327,7 +327,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -345,7 +345,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -363,7 +363,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -389,7 +389,7 @@ const ProjectLayout = () => {
               <span>Print on Shirt</span>
               <div className="flex items-center gap-1 ml-1">
                 {getActiveScheduleCountByType('print-on-shirt') > 0 && (
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 )}
                 <span className="text-xs text-muted-foreground">
                   ({getActiveScheduleCountByType('print-on-shirt')}/
@@ -414,7 +414,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -432,7 +432,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -450,7 +450,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -468,7 +468,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -494,7 +494,7 @@ const ProjectLayout = () => {
               <span>Journal Blog Post</span>
               <div className="flex items-center gap-1 ml-1">
                 {getActiveScheduleCountByType('journal') > 0 && (
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 )}
                 <span className="text-xs text-muted-foreground">
                   ({getActiveScheduleCountByType('journal')}/
@@ -519,7 +519,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -537,7 +537,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -555,7 +555,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -573,7 +573,7 @@ const ProjectLayout = () => {
                         flex items-center gap-2 px-2 py-2 rounded-md transition-colors ml-4
                         ${
                           isActive
-                            ? 'bg-muted text-primary font-medium'
+                            ? 'bg-muted text-foreground font-medium'
                             : 'hover:bg-muted/50'
                         }
                       `}
@@ -600,7 +600,7 @@ const ProjectLayout = () => {
                       flex items-center gap-2 px-2 py-2 rounded-md transition-colors
                       ${
                         isActive
-                          ? 'bg-muted text-primary font-medium'
+                          ? 'bg-muted text-foreground font-medium'
                           : 'hover:bg-muted/50'
                       }
                     `}
@@ -626,7 +626,7 @@ const ProjectLayout = () => {
                       flex items-center gap-2 px-2 py-2 rounded-md transition-colors
                       ${
                         isActive
-                          ? 'bg-muted text-primary font-medium'
+                          ? 'bg-muted text-foreground font-medium'
                           : 'hover:bg-muted/50'
                       }
                     `}
@@ -703,7 +703,7 @@ const ProjectLayout = () => {
                         <div className="relative">
                           <Calendar className="h-4 w-4" />
                           {getActiveSchedules().length > 0 && (
-                            <div className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                            <div className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
                           )}
                         </div>
                         <span>
@@ -714,16 +714,16 @@ const ProjectLayout = () => {
                           active
                         </span>
                         {getActiveSchedules().length > 0 && (
-                          <Loader2 className="h-3 w-3 text-green-500 animate-spin" />
+                          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                         )}
                       </div>
                     </HoverCardTrigger>
                     <HoverCardContent className="w-80" align="end">
                       <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 text-green-500 animate-spin" />
+                          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
                           <h4 className="font-semibold">Active Schedules</h4>
-                          <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
                         </div>
 
                         {getActiveSchedules().length === 0 ? (
