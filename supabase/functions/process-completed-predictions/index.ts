@@ -82,7 +82,7 @@ Deno.serve(async (req: Request) => {
       `
       )
       .eq('generation_status', 'processing')
-      .in('content_type', ['design', 'video'])
+      .in('content_type', ['design', 'video', 'video-generation'])
       .not('metadata->prediction_id', 'is', null);
 
     if (fetchError) {
@@ -220,6 +220,7 @@ Deno.serve(async (req: Request) => {
                 replicate_output_url: contentUrl,
                 generation_time_seconds: metadata.generation_time_seconds || 0,
                 prediction_id: predictionId,
+                storage_path: fileNameWithExt,
               };
 
               const { error: updateError } = await supabase
@@ -227,7 +228,6 @@ Deno.serve(async (req: Request) => {
                 .update({
                   generation_status: 'completed',
                   content_url: publicUrl,
-                  storage_path: fileNameWithExt,
                   metadata: updatedMetadata,
                 })
                 .eq('id', content.id);

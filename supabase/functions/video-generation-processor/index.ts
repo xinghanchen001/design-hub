@@ -9,6 +9,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 interface VideoGenerationRequest {
   schedule_id: string;
+  generation_job_id: string;
   prompt: string;
   negative_prompt?: string;
   start_image: string;
@@ -41,7 +42,8 @@ serve(async (req) => {
       !body.start_image ||
       !body.schedule_id ||
       !body.user_id ||
-      !body.task_id
+      !body.task_id ||
+      !body.generation_job_id
     ) {
       console.error('Missing required fields:', {
         prompt: !!body.prompt,
@@ -49,6 +51,7 @@ serve(async (req) => {
         schedule_id: !!body.schedule_id,
         user_id: !!body.user_id,
         task_id: !!body.task_id,
+        generation_job_id: !!body.generation_job_id,
       });
       return new Response('Missing required fields', { status: 400 });
     }
@@ -69,6 +72,21 @@ serve(async (req) => {
 
     console.log('Replicate prediction created:', prediction.id);
 
+    // Update the generation_jobs table with the prediction ID
+    const { error: jobUpdateError } = await supabase
+      .from('generation_jobs')
+      .update({
+        external_job_id: prediction.id,
+        status: 'processing',
+        started_at: new Date().toISOString(),
+      })
+      .eq('id', body.generation_job_id);
+
+    if (jobUpdateError) {
+      console.error('Error updating generation job:', jobUpdateError);
+      // It's not a fatal error for the whole process, but we should log it
+    }
+
     // Store in generated_content table
     const { data: contentData, error: contentError } = await supabase
       .from('generated_content')
@@ -80,7 +98,6 @@ serve(async (req) => {
         content_type: 'video',
         title: `Video: ${body.prompt.substring(0, 50)}...`,
         description: body.prompt,
-        external_job_id: prediction.id,
         generation_status: 'processing',
         metadata: {
           prompt: body.prompt,
@@ -90,6 +107,7 @@ serve(async (req) => {
           duration: body.duration || 5,
           model: 'kwaivgi/kling-v2.1',
           created_at: new Date().toISOString(),
+          prediction_id: prediction.id,
         },
       })
       .select()

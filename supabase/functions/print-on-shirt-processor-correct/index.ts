@@ -230,9 +230,8 @@ Deno.serve(async (req: Request) => {
             `🎯 Generated ${combinations.length} combinations for schedule ${schedule.name}`
           );
 
-          // Process combinations (limit to avoid too many API calls)
-          const maxCombinations = Math.min(combinations.length, 3);
-          const selectedCombinations = combinations.slice(0, maxCombinations);
+          // Process all combinations (user explicitly selected these images)
+          const selectedCombinations = combinations;
 
           for (const combination of selectedCombinations) {
             console.log(`🎨 Processing combination: ${combination.combo_name}`);

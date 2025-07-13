@@ -125,6 +125,27 @@ serve(async (req) => {
           );
           generateResult = result.data;
           generateError = result.error;
+        } else if (schedule.task_type === 'video-generation') {
+          // Call the video-generation processor function
+          const result = await supabase.functions.invoke(
+            'video-generation-processor',
+            {
+              body: {
+                schedule_id: schedule.id,
+                generation_job_id: newJob.id,
+                prompt: schedule.prompt,
+                negative_prompt:
+                  schedule.generation_settings?.negative_prompt || '',
+                start_image: schedule.generation_settings?.start_image_url,
+                mode: schedule.generation_settings?.mode || 'standard',
+                duration: schedule.generation_settings?.duration || 5,
+                user_id: schedule.user_id,
+                task_id: schedule.task_id,
+              },
+            }
+          );
+          generateResult = result.data;
+          generateError = result.error;
         } else if (schedule.task_type === 'journal') {
           // For journal, we'll handle it differently since it doesn't generate images
           console.log(

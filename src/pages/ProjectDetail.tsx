@@ -39,6 +39,7 @@ import {
   Image,
   Shirt,
   FileText,
+  Video,
   Calendar,
   Activity,
   ChevronRight,
@@ -63,7 +64,11 @@ interface Task {
   id: string;
   name: string;
   description: string | null;
-  task_type: 'image-generation' | 'print-on-shirt' | 'journal';
+  task_type:
+    | 'image-generation'
+    | 'print-on-shirt'
+    | 'journal'
+    | 'video-generation';
   status: 'active' | 'paused' | 'archived';
   settings: any;
   created_at: string;
@@ -285,6 +290,8 @@ const ProjectDetail = () => {
         return <Shirt className="h-4 w-4" />;
       case 'journal':
         return <FileText className="h-4 w-4" />;
+      case 'video-generation':
+        return <Video className="h-4 w-4" />;
       default:
         return <Bot className="h-4 w-4" />;
     }
@@ -298,6 +305,8 @@ const ProjectDetail = () => {
         return 'Print on Shirt';
       case 'journal':
         return 'Journal';
+      case 'video-generation':
+        return 'Video Generation';
       default:
         return taskType;
     }
