@@ -46,6 +46,7 @@ const CreateImageAgent = () => {
     maxImages: 100,
     scheduleDuration: 8,
     generationInterval: 60,
+    aspectRatio: 'match_input_image', // Add aspect ratio to form data
   });
 
   const { user } = useAuth();
@@ -348,6 +349,7 @@ const CreateImageAgent = () => {
           max_images_to_generate: formData.maxImages,
           generation_interval_minutes: formData.generationInterval,
           schedule_duration_hours: formData.scheduleDuration,
+          aspect_ratio: formData.aspectRatio, // Add aspect ratio to task settings
         },
       };
 
@@ -375,6 +377,7 @@ const CreateImageAgent = () => {
         generation_settings: {
           max_images_to_generate: formData.maxImages,
           reference_image_url: referenceImageUrl,
+          aspect_ratio: formData.aspectRatio,
         },
         bucket_settings: {
           auto_cleanup: true,
@@ -505,6 +508,36 @@ const CreateImageAgent = () => {
                     upload a reference image below.
                   </p>
                 </div>
+                                 <div className="space-y-2">
+                   <Label htmlFor="aspect_ratio">Aspect Ratio</Label>
+                   <Select
+                     value={formData.aspectRatio}
+                     onValueChange={(value) =>
+                       setFormData({ ...formData, aspectRatio: value })
+                     }
+                   >
+                     <SelectTrigger>
+                       <SelectValue placeholder="Select aspect ratio" />
+                     </SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="match_input_image">
+                         Match Input Image
+                       </SelectItem>
+                       <SelectItem value="1:1">1:1 (Square)</SelectItem>
+                       <SelectItem value="16:9">16:9 (Wide)</SelectItem>
+                       <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                       <SelectItem value="4:3">4:3 (Standard)</SelectItem>
+                       <SelectItem value="3:4">3:4 (Portrait)</SelectItem>
+                       <SelectItem value="3:2">3:2 (Landscape)</SelectItem>
+                       <SelectItem value="2:3">2:3 (Portrait)</SelectItem>
+                       <SelectItem value="5:4">5:4 (Nearly Square)</SelectItem>
+                       <SelectItem value="4:5">4:5 (Portrait)</SelectItem>
+                     </SelectContent>
+                   </Select>
+                   <p className="text-xs text-muted-foreground">
+                     Control the dimensions of generated images. "Match Input Image" uses the reference image's aspect ratio.
+                   </p>
+                 </div>
               </CardContent>
             </Card>
 

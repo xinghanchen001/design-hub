@@ -1,3 +1,4 @@
+// Version 26 - Clean deployment without generation_job_id column
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import Replicate from 'npm:replicate';
@@ -51,16 +52,16 @@ Deno.serve(async (req) => {
   let body: any = {};
 
   try {
-    console.log('=== Image Generation Function Called ===');
+    console.log('=== Image Generation Function Called v26 ===');
     body = await req.json();
     console.log('Request body:', body);
 
-    const REPLICATE_API_KEY = Deno.env.get('REPLICATE_API_KEY');
+    const REPLICATE_API_TOKEN = Deno.env.get('REPLICATE_API_TOKEN');
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-    if (!REPLICATE_API_KEY) {
-      throw new Error('REPLICATE_API_KEY is not set');
+    if (!REPLICATE_API_TOKEN) {
+      throw new Error('REPLICATE_API_TOKEN is not set');
     }
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -68,10 +69,15 @@ Deno.serve(async (req) => {
     }
 
     // Initialize Supabase client with service role key for admin operations
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
     const replicate = new Replicate({
-      auth: REPLICATE_API_KEY,
+      auth: REPLICATE_API_TOKEN,
     });
 
     const { schedule_id, manual_generation = false, job_id = null } = body;
@@ -88,22 +94,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch schedule details
+    // Fetch schedule details directly to bypass RLS issues
     console.log('Fetching schedule:', schedule_id);
-    const { data: schedule, error: scheduleError } = await supabase
+
+    // Direct query with service role to bypass RLS
+    const { data: schedules, error: scheduleError } = await supabase
       .from('schedules')
       .select('*')
       .eq('id', schedule_id)
-      .single();
+      .limit(1);
+
+    console.log('Schedule fetch result:', { schedules, scheduleError });
 
     if (scheduleError) {
       console.error('Schedule fetch error:', scheduleError);
       throw new Error(`Failed to fetch schedule: ${scheduleError.message}`);
     }
 
-    if (!schedule) {
+    if (!schedules || schedules.length === 0) {
+      console.log('No schedule found with ID:', schedule_id);
       throw new Error('Schedule not found');
     }
+
+    const schedule = schedules[0];
 
     console.log('Schedule found:', schedule.name);
     console.log('Schedule prompt:', schedule.prompt);
@@ -250,10 +263,14 @@ Deno.serve(async (req) => {
             {
               input: {
                 prompt: schedule.prompt,
-                image: bucketImage.image_url, // Use bucket image as reference
+                input_image: bucketImage.image_url, // Use bucket image as reference
                 aspect_ratio: generationSettings.aspect_ratio || '1:1',
                 output_format: 'png',
                 safety_tolerance: 2,
+                prompt_upsampling: generationSettings.prompt_upsampling || true, // Automatic prompt improvement
+                ...(generationSettings.seed && {
+                  seed: generationSettings.seed,
+                }), // Add seed if provided
               },
             }
           );
@@ -262,14 +279,45 @@ Deno.serve(async (req) => {
           console.log(
             `✅ Image generation completed in ${generationTime} seconds`
           );
-          console.log('Generated image URL:', output);
+          console.log('Generated image output:', output);
 
-          if (!output || typeof output !== 'string') {
+          // Handle both string URLs and FileOutput objects from Replicate
+          let imageUrl: string;
+          if (typeof output === 'string') {
+            imageUrl = output;
+          } else if (output && typeof output === 'object' && 'url' in output) {
+            // Check if url is a function (FileOutput) or direct property
+            const urlProperty = (output as any).url;
+            if (typeof urlProperty === 'function') {
+              imageUrl = urlProperty(); // Call the function to get the URL
+              console.log('Called FileOutput.url() function:', imageUrl);
+            } else {
+              imageUrl = urlProperty; // Direct property access
+              console.log('Extracted URL from FileOutput property:', imageUrl);
+            }
+          } else if (
+            output &&
+            typeof output === 'object' &&
+            'toString' in output
+          ) {
+            // Fallback: try to get URL from toString method
+            imageUrl = output.toString();
+            console.log('Extracted URL from toString:', imageUrl);
+          } else {
+            console.error('Unexpected Replicate output format:', output);
             throw new Error('Invalid output from Replicate API');
           }
 
+          if (!imageUrl || typeof imageUrl !== 'string') {
+            throw new Error(
+              'Could not extract valid URL from Replicate output'
+            );
+          }
+
+          console.log('Final image URL to download:', imageUrl);
+
           // Download and store the generated image
-          const imageResponse = await fetch(output);
+          const imageResponse = await fetch(imageUrl);
           if (!imageResponse.ok) {
             throw new Error(
               `Failed to download image: ${imageResponse.statusText}`
@@ -330,7 +378,7 @@ Deno.serve(async (req) => {
                 metadata: {
                   prompt: schedule.prompt,
                   storage_path: filename,
-                  model_used: 'flux-dev',
+                  model_used: 'flux-kontext-max',
                   reference_image_url: bucketImage.image_url,
                   reference_image_filename: bucketImage.filename,
                   aspect_ratio: generationSettings.aspect_ratio || '1:1',
@@ -377,18 +425,63 @@ Deno.serve(async (req) => {
         aspect_ratio: generationSettings.aspect_ratio || '1:1',
         output_format: 'png',
         safety_tolerance: 2,
+        prompt_upsampling: generationSettings.prompt_upsampling || true, // Automatic prompt improvement
       };
+
+      // Add seed if provided for reproducible generation
+      if (generationSettings.seed) {
+        replicateInput.seed = generationSettings.seed;
+      }
 
       // Add reference image if provided in generation settings
       if (generationSettings.reference_image_url) {
-        replicateInput.image = generationSettings.reference_image_url;
         console.log(
-          'Using reference image:',
+          '🖼️ Reference image URL found:',
           generationSettings.reference_image_url
         );
+
+        // Try to validate the reference image, but don't let validation failures block usage
+        try {
+          console.log('🔍 Validating reference image accessibility...');
+          const imageCheck = await fetch(
+            generationSettings.reference_image_url,
+            {
+              method: 'HEAD',
+              signal: AbortSignal.timeout(5000), // 5 second timeout
+            }
+          );
+
+          if (!imageCheck.ok) {
+            console.warn(
+              `⚠️ Reference image returned ${imageCheck.status}, but proceeding anyway: ${generationSettings.reference_image_url}`
+            );
+          } else {
+            console.log('✅ Reference image validation successful');
+          }
+        } catch (error) {
+          console.warn(
+            '⚠️ Reference image validation failed, but proceeding anyway:',
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+
+        // Always set the reference image regardless of validation result
+        replicateInput.input_image = generationSettings.reference_image_url;
+        console.log(
+          '🎯 Reference image added to Replicate input:',
+          generationSettings.reference_image_url
+        );
+      } else {
+        console.log('📝 No reference image URL found in generation settings');
       }
 
-      const output = await replicate.run('black-forest-labs/flux-dev', {
+      // Log the complete input being sent to Replicate
+      console.log(
+        '🚀 Complete Replicate input:',
+        JSON.stringify(replicateInput, null, 2)
+      );
+
+      const output = await replicate.run('black-forest-labs/flux-kontext-max', {
         input: replicateInput,
       });
 
@@ -396,12 +489,48 @@ Deno.serve(async (req) => {
       console.log('Image generation completed in', generationTime, 'seconds');
       console.log('Generated image output:', output);
 
-      // Handle both string and array responses from Replicate
+      // Handle string, array, and FileOutput responses from Replicate
       let imageUrl: string;
       if (Array.isArray(output) && output.length > 0) {
-        imageUrl = output[0];
+        // If it's an array, get the first item and handle it appropriately
+        const firstOutput = output[0];
+        if (typeof firstOutput === 'string') {
+          imageUrl = firstOutput;
+        } else if (
+          firstOutput &&
+          typeof firstOutput === 'object' &&
+          'url' in firstOutput
+        ) {
+          // Check if url is a function (FileOutput) or direct property
+          const urlProperty = (firstOutput as any).url;
+          if (typeof urlProperty === 'function') {
+            imageUrl = urlProperty(); // Call the function to get the URL
+            console.log('Called FileOutput.url() function in array:', imageUrl);
+          } else {
+            imageUrl = urlProperty; // Direct property access
+            console.log(
+              'Extracted URL from FileOutput property in array:',
+              imageUrl
+            );
+          }
+        } else {
+          imageUrl = firstOutput.toString();
+        }
       } else if (typeof output === 'string') {
         imageUrl = output;
+      } else if (output && typeof output === 'object' && 'url' in output) {
+        // Check if url is a function (FileOutput) or direct property
+        const urlProperty = (output as any).url;
+        if (typeof urlProperty === 'function') {
+          imageUrl = urlProperty(); // Call the function to get the URL
+          console.log('Called FileOutput.url() function:', imageUrl);
+        } else {
+          imageUrl = urlProperty; // Direct property access
+          console.log('Extracted URL from FileOutput property:', imageUrl);
+        }
+      } else if (output && typeof output === 'object' && 'toString' in output) {
+        imageUrl = output.toString();
+        console.log('Extracted URL from toString:', imageUrl);
       } else {
         console.error('Unexpected Replicate output format:', output);
         throw new Error('Invalid output from Replicate API');
@@ -474,7 +603,7 @@ Deno.serve(async (req) => {
             metadata: {
               prompt: schedule.prompt,
               storage_path: filename,
-              model_used: 'flux-dev',
+              model_used: 'flux-kontext-max',
               reference_image_url: generationSettings.reference_image_url,
               aspect_ratio: generationSettings.aspect_ratio || '1:1',
               generation_time_seconds: generationTime,

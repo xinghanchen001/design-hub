@@ -1,6 +1,40 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+interface ScheduleConfig {
+  enabled?: boolean;
+  duration_hours?: number;
+  schedule_duration_hours?: number;
+  interval_minutes?: number;
+  generation_interval_minutes?: number;
+}
+
+interface GenerationSettings {
+  max_images?: number;
+  max_images_to_generate?: number;
+  aspect_ratio?: string;
+  output_format?: string;
+  safety_tolerance?: number;
+  input_image_1_url?: string;
+  input_image_2_url?: string;
+}
+
+interface BucketSettings {
+  use_bucket_images?: boolean;
+  bucket_image_1_ids?: string[];
+  bucket_image_2_ids?: string[];
+  auto_cleanup?: boolean;
+  max_bucket_size?: number;
+}
+
+interface ImageMetadata {
+  width?: number;
+  height?: number;
+  format?: string;
+  size?: number;
+  [key: string]: unknown;
+}
+
 interface PrintOnShirtSchedule {
   id: string;
   user_id: string;
@@ -9,9 +43,9 @@ interface PrintOnShirtSchedule {
   prompt: string;
   task_type: string;
   status: string;
-  schedule_config: any;
-  generation_settings: any;
-  bucket_settings: any;
+  schedule_config: ScheduleConfig;
+  generation_settings: GenerationSettings;
+  bucket_settings: BucketSettings;
   created_at: string;
   next_run: string;
 }
@@ -23,7 +57,7 @@ interface BucketImage {
   image_url: string;
   file_size: number;
   mime_type: string;
-  metadata: any;
+  metadata: ImageMetadata;
   created_at: string;
   updated_at: string;
 }
@@ -53,7 +87,7 @@ Deno.serve(async (req: Request) => {
   console.log('🔧 Environment check:', {
     hasSupabaseUrl: !!SUPABASE_URL,
     hasSupabaseKey: !!SUPABASE_SERVICE_ROLE_KEY,
-    hasReplicateToken: !!REPLICATE_API_TOKEN
+    hasReplicateToken: !!REPLICATE_API_TOKEN,
   });
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -100,9 +134,10 @@ Deno.serve(async (req: Request) => {
     for (const schedule of schedules as PrintOnShirtSchedule[]) {
       console.log(`🔍 Processing schedule: ${schedule.name} (${schedule.id})`);
 
-      const scheduleConfig = (schedule.schedule_config as any) || {};
-      const generationSettings = (schedule.generation_settings as any) || {};
-      const bucketSettings = (schedule.bucket_settings as any) || {};
+      const scheduleConfig: ScheduleConfig = schedule.schedule_config || {};
+      const generationSettings: GenerationSettings =
+        schedule.generation_settings || {};
+      const bucketSettings: BucketSettings = schedule.bucket_settings || {};
 
       // Check if we've reached the duration limit - SUPPORT BOTH OLD AND NEW FIELD NAMES
       const scheduleStart = new Date(schedule.created_at);
@@ -269,7 +304,10 @@ Deno.serve(async (req: Request) => {
             }
 
             const predictionData = await replicateResponse.json();
-            console.log(`✅ Prediction created for ${combination.combo_name}:`, predictionData.id);
+            console.log(
+              `✅ Prediction created for ${combination.combo_name}:`,
+              predictionData.id
+            );
 
             // Store the generation record in the database
             const { error: insertError } = await supabase
@@ -296,7 +334,10 @@ Deno.serve(async (req: Request) => {
               });
 
             if (insertError) {
-              console.error(`❌ Error inserting content record for ${combination.combo_name}:`, insertError);
+              console.error(
+                `❌ Error inserting content record for ${combination.combo_name}:`,
+                insertError
+              );
               continue; // Continue with other combinations
             }
           }
@@ -417,38 +458,39 @@ Deno.serve(async (req: Request) => {
 
           processedCount++;
           console.log(`✅ Successfully processed ${schedule.name}`);
-        } catch (error) {
-          console.error(`❌ Error processing schedule ${schedule.name}:`, error);
         }
+      } catch (error) {
+        console.error(`❌ Error processing schedule ${schedule.name}:`, error);
       }
-
-      console.log(
-        `=== Print-on-Shirt Processor completed: ${processedCount}/${schedules.length} schedules processed successfully ===`
-      );
-
-      return new Response(
-        JSON.stringify({
-          message: 'Print-on-shirt schedules processed successfully',
-          processed: processedCount,
-          total: schedules.length,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    } catch (error) {
-      console.error('Error in print-on-shirt-processor-correct function:', error);
-
-      return new Response(
-        JSON.stringify({
-          error: error.message,
-          success: false,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
-        }
-      );
     }
-  });
+
+    console.log(
+      `=== Print-on-Shirt Processor completed: ${processedCount}/${schedules.length} schedules processed successfully ===`
+    );
+
+    return new Response(
+      JSON.stringify({
+        message: 'Print-on-shirt schedules processed successfully',
+        processed: processedCount,
+        total: schedules.length,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      }
+    );
+  } catch (error) {
+    console.error('Error in print-on-shirt-processor-correct function:', error);
+
+    return new Response(
+      JSON.stringify({
+        error: error.message,
+        success: false,
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      }
+    );
+  }
+});
