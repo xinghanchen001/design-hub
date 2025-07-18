@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import CreatePrintOnShirtDialog from '@/components/CreatePrintOnShirtDialog';
 import {
   Shirt,
   Plus,
@@ -115,6 +116,7 @@ const PrintOnShirtView = () => {
     BucketImage[]
   >([]);
   const [useBucketImages, setUseBucketImages] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   // File input refs for triggering file upload
   const fileInputRef1 = useRef<HTMLInputElement>(null);
@@ -757,7 +759,7 @@ const PrintOnShirtView = () => {
           </p>
         </div>
         <Button
-          onClick={() => setIsCreating(true)}
+          onClick={() => setCreateDialogOpen(true)}
           className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
         >
           <Plus className="mr-2 h-4 w-4" />
@@ -765,11 +767,19 @@ const PrintOnShirtView = () => {
         </Button>
       </div>
 
-      {/* Create Schedule Form */}
-      {isCreating && (
+      {/* Create Schedule Form - Now handled by CreatePrintOnShirtDialog */}
+      {/* Inline create form removed - now using CreatePrintOnShirtDialog */}
+
+      {/* Edit Schedule Form */}
+      {isEditing && editingSchedule && (
         <Card className="shadow-card border-border/50">
-          <CardContent className="space-y-6 pt-6">
-            {/* Basic Information */}
+          <CardHeader>
+            <CardTitle>Edit Print on Shirt Schedule</CardTitle>
+            <CardDescription>
+              Update your automated generation schedule settings
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">Schedule Name *</Label>
@@ -1971,7 +1981,7 @@ const PrintOnShirtView = () => {
             <p className="text-muted-foreground mb-4">
               Create your first multi-image combination schedule to get started
             </p>
-            <Button onClick={() => setIsCreating(true)}>
+            <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Create Your First Schedule
             </Button>
@@ -1993,6 +2003,16 @@ const PrintOnShirtView = () => {
         accept="image/*"
         onChange={(e) => handleBucketImageUpload(e, 2)}
         style={{ display: 'none' }}
+      />
+
+      {/* Create Print on Shirt Dialog */}
+      <CreatePrintOnShirtDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        projectId={project.id}
+        onSuccess={() => {
+          loadSchedules();
+        }}
       />
     </div>
   );

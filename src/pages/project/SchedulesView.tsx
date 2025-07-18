@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import CreateImageAgentDialog from '@/components/CreateImageAgentDialog';
 import {
   Calendar,
   Plus,
@@ -95,6 +96,8 @@ const SchedulesView = () => {
   const [selectedReferenceImage, setSelectedReferenceImage] =
     useState<BucketImage | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [createImageAgentDialogOpen, setCreateImageAgentDialogOpen] =
+    useState(false);
 
   // Helper function to determine where to navigate for creating new schedules
   const getNewScheduleRoute = () => {
@@ -409,7 +412,18 @@ const SchedulesView = () => {
             Create and manage your AI image generation schedules
           </p>
         </div>
-        <Button onClick={() => navigate(getNewScheduleRoute())}>
+        <Button
+          onClick={() => {
+            const hasImageGeneration = tasks?.some(
+              (task) => task.task_type === 'image-generation'
+            );
+            if (hasImageGeneration) {
+              setCreateImageAgentDialogOpen(true);
+            } else {
+              navigate(getNewScheduleRoute());
+            }
+          }}
+        >
           <Plus className="mr-2 h-4 w-4" />
           {tasks?.some((task) => task.task_type === 'image-generation')
             ? 'New AI Image Agent'
@@ -824,19 +838,15 @@ const SchedulesView = () => {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground mb-4">
                         <div>
                           <Clock className="h-3 w-3 inline mr-1" />
-                          Every{' '}
-                          {scheduleConfig.generation_interval_minutes || 60}m
+                          Every {scheduleConfig.interval_minutes || 60}m
                         </div>
                         <div>
                           <Images className="h-3 w-3 inline mr-1" />
-                          Max:{' '}
-                          {generationSettings.max_images_to_generate ||
-                            'Unlimited'}
+                          Max: {generationSettings.max_images || 'Unlimited'}
                         </div>
                         <div>
                           <Zap className="h-3 w-3 inline mr-1" />
-                          Duration:{' '}
-                          {scheduleConfig.schedule_duration_hours || 8}h
+                          Duration: {scheduleConfig.duration_hours || 8}h
                         </div>
                         <div>
                           <Activity className="h-3 w-3 inline mr-1" />
@@ -901,13 +911,35 @@ const SchedulesView = () => {
             <p className="text-muted-foreground mb-4">
               Create your first AI generation schedule to get started
             </p>
-            <Button onClick={() => navigate(getNewScheduleRoute())}>
+            <Button
+              onClick={() => {
+                const hasImageGeneration = tasks?.some(
+                  (task) => task.task_type === 'image-generation'
+                );
+                if (hasImageGeneration) {
+                  setCreateImageAgentDialogOpen(true);
+                } else {
+                  navigate(getNewScheduleRoute());
+                }
+              }}
+            >
               <Plus className="mr-2 h-4 w-4" />
               Create Your First Schedule
             </Button>
           </div>
         )}
       </div>
+
+      {/* Create Image Agent Dialog */}
+      <CreateImageAgentDialog
+        open={createImageAgentDialogOpen}
+        onOpenChange={setCreateImageAgentDialogOpen}
+        projectId={project.id}
+        onSuccess={() => {
+          fetchProjectData();
+          fetchSchedules();
+        }}
+      />
     </div>
   );
 };

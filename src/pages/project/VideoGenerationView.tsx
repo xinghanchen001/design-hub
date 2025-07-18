@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import CreateVideoGenerationDialog from '@/components/CreateVideoGenerationDialog';
 import {
   Video,
   Plus,
@@ -97,6 +98,7 @@ const VideoGenerationView = () => {
   const [editingSchedule, setEditingSchedule] =
     useState<VideoGenerationSchedule | null>(null);
   const [saving, setSaving] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<FormData>({
@@ -435,7 +437,7 @@ const VideoGenerationView = () => {
             Create AI videos using Kling v2.1 model
           </p>
         </div>
-        <Button onClick={() => setIsCreating(true)} className="gap-2">
+        <Button onClick={() => setCreateDialogOpen(true)} className="gap-2">
           <Plus className="h-4 w-4" />
           Create Video Schedule
         </Button>
@@ -680,7 +682,7 @@ const VideoGenerationView = () => {
                 Create your first video generation schedule to start producing
                 AI videos
               </p>
-              <Button onClick={() => setIsCreating(true)} className="gap-2">
+              <Button onClick={() => setCreateDialogOpen(true)} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Create Video Schedule
               </Button>
@@ -706,9 +708,11 @@ const VideoGenerationView = () => {
                       <span className="text-sm font-medium">
                         {schedule.status === 'active' ? 'Active' : 'Paused'}
                       </span>
-                      <Switch 
-                        checked={schedule.status === 'active'} 
-                        onCheckedChange={() => toggleScheduleStatus(schedule.id, schedule.status)}
+                      <Switch
+                        checked={schedule.status === 'active'}
+                        onCheckedChange={() =>
+                          toggleScheduleStatus(schedule.id, schedule.status)
+                        }
                       />
                     </div>
                     <Button
@@ -814,6 +818,16 @@ const VideoGenerationView = () => {
           ))
         )}
       </div>
+
+      {/* Create Video Generation Dialog */}
+      <CreateVideoGenerationDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        projectId={project.id}
+        onSuccess={() => {
+          loadSchedules();
+        }}
+      />
     </div>
   );
 };

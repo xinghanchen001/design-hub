@@ -134,15 +134,18 @@ const BucketView = () => {
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
       setSelectedFiles(files);
+      // Automatically start upload
+      await uploadImages(files);
     }
   };
 
-  const uploadImages = async () => {
-    if (!selectedFiles || selectedFiles.length === 0) return;
+  const uploadImages = async (filesToUpload?: FileList) => {
+    const files = filesToUpload || selectedFiles;
+    if (!files || files.length === 0) return;
     if (!tasks?.length) {
       toast.error('No tasks found for this project');
       return;
@@ -161,62 +164,59 @@ const BucketView = () => {
     setUploadProgress(0);
 
     try {
-      const uploadPromises = Array.from(selectedFiles).map(
-        async (file, index) => {
-          // Generate storage path
-          const timestamp = Date.now();
-          const fileExt = file.name.split('.').pop();
-          const fileName = `bucket_${timestamp}_${index}.${fileExt}`;
-          const storagePath = `${user?.id}/bucket/${project?.id}/${actualProjectType}/${fileName}`;
+      const uploadPromises = Array.from(files).map(async (file, index) => {
+        // Generate storage path
+        const timestamp = Date.now();
+        const fileExt = file.name.split('.').pop();
+        const fileName = `bucket_${timestamp}_${index}.${fileExt}`;
+        const storagePath = `${user?.id}/bucket/${project?.id}/${actualProjectType}/${fileName}`;
 
-          // Upload to Supabase storage - use the correct bucket name
-          const { data: uploadData, error: uploadError } =
-            await supabase.storage
-              .from('user-bucket-images') // Changed from 'user-images' to 'user-bucket-images'
-              .upload(storagePath, file, {
-                cacheControl: '3600',
-                upsert: false,
-              });
+        // Upload to Supabase storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('user-bucket-images')
+          .upload(storagePath, file, {
+            cacheControl: '3600',
+            upsert: false,
+          });
 
-          if (uploadError) throw uploadError;
+        if (uploadError) throw uploadError;
 
-          // Get public URL
-          const { data: urlData } = supabase.storage
-            .from('user-bucket-images') // Changed from 'user-images' to 'user-bucket-images'
-            .getPublicUrl(storagePath);
+        // Get public URL
+        const { data: urlData } = supabase.storage
+          .from('user-bucket-images')
+          .getPublicUrl(storagePath);
 
-          // Insert into database with task_id and task_type
-          const { data: dbData, error: dbError } = await supabase
-            .from('project_bucket_images')
-            .insert({
-              task_id: matchingTask.id,
-              user_id: user?.id,
-              task_type: actualProjectType,
-              filename: file.name,
-              storage_path: storagePath,
-              image_url: urlData.publicUrl,
-              file_size: file.size,
-              mime_type: file.type,
-              metadata: {
-                originalName: file.name,
-                uploadedAt: new Date().toISOString(),
-                taskType: actualProjectType,
-              },
-            })
-            .select()
-            .single();
+        // Insert into database with task_id and task_type
+        const { data: dbData, error: dbError } = await supabase
+          .from('project_bucket_images')
+          .insert({
+            task_id: matchingTask.id,
+            user_id: user?.id,
+            task_type: actualProjectType,
+            filename: file.name,
+            storage_path: storagePath,
+            image_url: urlData.publicUrl,
+            file_size: file.size,
+            mime_type: file.type,
+            metadata: {
+              originalName: file.name,
+              uploadedAt: new Date().toISOString(),
+              taskType: actualProjectType,
+            },
+          })
+          .select()
+          .single();
 
-          if (dbError) throw dbError;
+        if (dbError) throw dbError;
 
-          // Update progress
-          setUploadProgress(((index + 1) / selectedFiles.length) * 100);
+        // Update progress
+        setUploadProgress(((index + 1) / files.length) * 100);
 
-          return dbData;
-        }
-      );
+        return dbData;
+      });
 
       await Promise.all(uploadPromises);
-      toast.success(`Successfully uploaded ${selectedFiles.length} images`);
+      toast.success(`Successfully uploaded ${files.length} images`);
       setSelectedFiles(null);
 
       // Reset file input
@@ -303,6 +303,40 @@ const BucketView = () => {
       URL.revokeObjectURL(url);
     } catch (error: any) {
       toast.error(error.message || 'Failed to download image');
+    }
+  };
+
+  const deleteImage = async (image: BucketImage) => {
+    try {
+      // Show confirmation dialog
+      const confirmed = window.confirm(
+        `Are you sure you want to delete "${image.filename}"? This action cannot be undone.`
+      );
+
+      if (!confirmed) return;
+
+      // Delete from storage
+      const { error: storageError } = await supabase.storage
+        .from('user-bucket-images')
+        .remove([image.storage_path]);
+
+      if (storageError) throw storageError;
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('project_bucket_images')
+        .delete()
+        .eq('id', image.id);
+
+      if (dbError) throw dbError;
+
+      // Refresh images list
+      await loadImages();
+
+      toast.success(`"${image.filename}" has been deleted successfully`);
+    } catch (error: any) {
+      console.error('Delete error:', error);
+      toast.error(error.message || 'Failed to delete image');
     }
   };
 
@@ -418,38 +452,17 @@ const BucketView = () => {
             </div>
           </div>
 
-          {selectedFiles && selectedFiles.length > 0 && (
-            <div className="space-y-4">
+          {uploading && (
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">
-                  {selectedFiles.length} file(s) selected
+                  Uploading images...
                 </p>
-                <Button
-                  onClick={uploadImages}
-                  disabled={uploading}
-                  className="bg-gradient-primary hover:shadow-glow transition-all duration-300"
-                >
-                  {uploading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Uploading...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload Images
-                    </>
-                  )}
-                </Button>
+                <p className="text-sm text-muted-foreground">
+                  {Math.round(uploadProgress)}% complete
+                </p>
               </div>
-              {uploading && (
-                <div className="space-y-2">
-                  <Progress value={uploadProgress} className="w-full" />
-                  <p className="text-sm text-muted-foreground text-center">
-                    {Math.round(uploadProgress)}% complete
-                  </p>
-                </div>
-              )}
+              <Progress value={uploadProgress} className="w-full" />
             </div>
           )}
         </CardContent>
@@ -544,6 +557,14 @@ const BucketView = () => {
                             className="h-8 w-8 p-0"
                           >
                             <Download className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => deleteImage(image)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                       </div>

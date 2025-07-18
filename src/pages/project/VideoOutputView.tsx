@@ -253,9 +253,6 @@ const VideoOutputView = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Generated Videos</h1>
-          <p className="text-muted-foreground">
-            View and manage your AI-generated videos
-          </p>
         </div>
         <div className="flex items-center gap-2">
           {isSelecting && (

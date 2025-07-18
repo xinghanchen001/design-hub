@@ -217,7 +217,7 @@ Deno.serve(async (req) => {
 
           // Use bucket image as reference image in the generation
           const output = await replicate.run(
-            'black-forest-labs/flux-kontext-max',
+            'flux-kontext-apps/multi-image-kontext-max',
             {
               input: {
                 prompt: schedule.prompt,
@@ -247,8 +247,13 @@ Deno.serve(async (req) => {
             // Check if url is a function (FileOutput) or direct property
             const urlProperty = (output as any).url;
             if (typeof urlProperty === 'function') {
-              imageUrl = urlProperty(); // Call the function to get the URL
-              console.log('Called FileOutput.url() function:', imageUrl);
+              const urlResult = urlProperty(); // Call the function to get the URL
+              console.log('Called FileOutput.url() function:', urlResult);
+              // Convert URL object to string if needed
+              imageUrl =
+                typeof urlResult === 'string'
+                  ? urlResult
+                  : urlResult.href || urlResult.toString();
             } else {
               imageUrl = urlProperty; // Direct property access
               console.log('Extracted URL from FileOutput property:', imageUrl);
@@ -439,9 +444,12 @@ Deno.serve(async (req) => {
         JSON.stringify(replicateInput, null, 2)
       );
 
-      const output = await replicate.run('black-forest-labs/flux-kontext-max', {
-        input: replicateInput,
-      });
+      const output = await replicate.run(
+        'flux-kontext-apps/multi-image-kontext-max',
+        {
+          input: replicateInput,
+        }
+      );
 
       const generationTime = (Date.now() - startTime) / 1000;
       console.log('Image generation completed in', generationTime, 'seconds');
@@ -462,8 +470,16 @@ Deno.serve(async (req) => {
           // Check if url is a function (FileOutput) or direct property
           const urlProperty = (firstOutput as any).url;
           if (typeof urlProperty === 'function') {
-            imageUrl = urlProperty(); // Call the function to get the URL
-            console.log('Called FileOutput.url() function in array:', imageUrl);
+            const urlResult = urlProperty(); // Call the function to get the URL
+            console.log(
+              'Called FileOutput.url() function in array:',
+              urlResult
+            );
+            // Convert URL object to string if needed
+            imageUrl =
+              typeof urlResult === 'string'
+                ? urlResult
+                : urlResult.href || urlResult.toString();
           } else {
             imageUrl = urlProperty; // Direct property access
             console.log(
@@ -480,8 +496,13 @@ Deno.serve(async (req) => {
         // Check if url is a function (FileOutput) or direct property
         const urlProperty = (output as any).url;
         if (typeof urlProperty === 'function') {
-          imageUrl = urlProperty(); // Call the function to get the URL
-          console.log('Called FileOutput.url() function:', imageUrl);
+          const urlResult = urlProperty(); // Call the function to get the URL
+          console.log('Called FileOutput.url() function:', urlResult);
+          // Convert URL object to string if needed
+          imageUrl =
+            typeof urlResult === 'string'
+              ? urlResult
+              : urlResult.href || urlResult.toString();
         } else {
           imageUrl = urlProperty; // Direct property access
           console.log('Extracted URL from FileOutput property:', imageUrl);
