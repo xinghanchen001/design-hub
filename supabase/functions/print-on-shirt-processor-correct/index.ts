@@ -166,33 +166,7 @@ Deno.serve(async (req: Request) => {
         continue;
       }
 
-      // Count existing images for this schedule
-      const { count: existingContentCount } = await supabase
-        .from('generated_content')
-        .select('*', { count: 'exact', head: true })
-        .eq('schedule_id', schedule.id)
-        .eq('content_type', 'design');
-
-      // Support both old (max_images) and new (max_images_to_generate) field names
-      const maxImages =
-        generationSettings.max_images_to_generate ||
-        generationSettings.max_images ||
-        10;
-      if (existingContentCount && existingContentCount >= maxImages) {
-        console.log(
-          `📸 Schedule ${schedule.name} has reached max images limit (${maxImages})`
-        );
-
-        // Disable the schedule
-        await supabase
-          .from('schedules')
-          .update({
-            status: 'paused',
-          })
-          .eq('id', schedule.id);
-
-        continue;
-      }
+      console.log('📊 Starting print-on-shirt generation process...');
 
       try {
         // If using bucket images, get the selected images

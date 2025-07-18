@@ -101,51 +101,194 @@ serve(async (req) => {
         let generateError;
 
         if (schedule.task_type === 'image-generation') {
-          // Call the generate-image function
-          const result = await supabase.functions.invoke('generate-image', {
-            body: {
-              schedule_id: schedule.id,
-              job_id: newJob.id,
-              manual_generation: false,
-            },
-          });
-          generateResult = result.data;
-          generateError = result.error;
-        } else if (schedule.task_type === 'print-on-shirt') {
-          // Call the print-on-shirt processor function
-          const result = await supabase.functions.invoke(
-            'print-on-shirt-processor-correct',
-            {
+          // Check max_images limit before generating
+          const maxImages =
+            schedule.generation_settings?.max_images_to_generate ||
+            schedule.generation_settings?.max_images ||
+            10;
+
+          const { count: existingImages } = await supabase
+            .from('generated_content')
+            .select('*', { count: 'exact', head: true })
+            .eq('schedule_id', schedule.id)
+            .eq('content_type', 'image');
+
+          if (existingImages && existingImages >= maxImages) {
+            console.log(
+              `Schedule ${schedule.id} has reached max_images limit (${maxImages}). Skipping generation.`
+            );
+
+            // Pause the schedule
+            await supabase
+              .from('schedules')
+              .update({ status: 'paused' })
+              .eq('id', schedule.id);
+
+            generateResult = {
+              success: true,
+              skipped: true,
+              reason: `Max images limit reached (${existingImages}/${maxImages})`,
+            };
+            generateError = null;
+          } else {
+            console.log(
+              `Schedule ${schedule.id}: ${
+                existingImages || 0
+              }/${maxImages} images generated. Proceeding with generation.`
+            );
+
+            // Call the generate-image function
+            const result = await supabase.functions.invoke('generate-image', {
               body: {
                 schedule_id: schedule.id,
                 job_id: newJob.id,
                 manual_generation: false,
               },
-            }
-          );
-          generateResult = result.data;
-          generateError = result.error;
+            });
+            generateResult = result.data;
+            generateError = result.error;
+          }
+        } else if (schedule.task_type === 'print-on-shirt') {
+          // Check max_images limit before generating
+          const maxImages =
+            schedule.generation_settings?.max_images_to_generate ||
+            schedule.generation_settings?.max_images ||
+            10;
+
+          const { count: existingDesigns } = await supabase
+            .from('generated_content')
+            .select('*', { count: 'exact', head: true })
+            .eq('schedule_id', schedule.id)
+            .eq('content_type', 'design');
+
+          if (existingDesigns && existingDesigns >= maxImages) {
+            console.log(
+              `Schedule ${schedule.id} has reached max_images limit (${maxImages}). Skipping generation.`
+            );
+
+            // Pause the schedule
+            await supabase
+              .from('schedules')
+              .update({ status: 'paused' })
+              .eq('id', schedule.id);
+
+            generateResult = {
+              success: true,
+              skipped: true,
+              reason: `Max images limit reached (${existingDesigns}/${maxImages})`,
+            };
+            generateError = null;
+          } else {
+            console.log(
+              `Schedule ${schedule.id}: ${
+                existingDesigns || 0
+              }/${maxImages} designs generated. Proceeding with generation.`
+            );
+
+            // Call the print-on-shirt processor function
+            const result = await supabase.functions.invoke(
+              'print-on-shirt-processor-correct',
+              {
+                body: {
+                  schedule_id: schedule.id,
+                  job_id: newJob.id,
+                  manual_generation: false,
+                },
+              }
+            );
+            generateResult = result.data;
+            generateError = result.error;
+          }
         } else if (schedule.task_type === 'video-generation') {
-          // Call the video-generation processor function
-          const result = await supabase.functions.invoke(
-            'video-generation-processor',
-            {
-              body: {
-                schedule_id: schedule.id,
-                generation_job_id: newJob.id,
-                prompt: schedule.prompt,
-                negative_prompt:
-                  schedule.generation_settings?.negative_prompt || '',
-                start_image: schedule.generation_settings?.start_image_url,
-                mode: schedule.generation_settings?.mode || 'standard',
-                duration: schedule.generation_settings?.duration || 5,
-                user_id: schedule.user_id,
-                task_id: schedule.task_id,
-              },
+          // Check max_videos limit before generating
+          const maxVideos = schedule.generation_settings?.max_videos;
+          const durationHours = schedule.schedule_config?.duration_hours || 24;
+
+          if (maxVideos && maxVideos > 0) {
+            // Check how many videos have been generated within the duration period
+            const { data: existingVideos, error: countError } = await supabase
+              .from('generated_content')
+              .select('id')
+              .eq('schedule_id', schedule.id)
+              .eq('task_type', 'video-generation')
+              .gte(
+                'created_at',
+                new Date(
+                  Date.now() - durationHours * 60 * 60 * 1000
+                ).toISOString()
+              );
+
+            if (countError) {
+              console.error(
+                `Error counting existing videos for schedule ${schedule.id}:`,
+                countError
+              );
+              generateResult = { success: false, error: countError.message };
+              generateError = countError;
+            } else if (existingVideos && existingVideos.length >= maxVideos) {
+              console.log(
+                `Schedule ${schedule.id} has reached max_videos limit (${maxVideos}). Skipping generation.`
+              );
+              generateResult = {
+                success: true,
+                skipped: true,
+                reason: `Max videos limit reached (${existingVideos.length}/${maxVideos})`,
+              };
+              generateError = null;
+            } else {
+              console.log(
+                `Schedule ${schedule.id}: ${
+                  existingVideos?.length || 0
+                }/${maxVideos} videos generated. Proceeding with generation.`
+              );
+
+              // Call the video-generation processor function
+              const result = await supabase.functions.invoke(
+                'video-generation-processor',
+                {
+                  body: {
+                    schedule_id: schedule.id,
+                    generation_job_id: newJob.id,
+                    prompt: schedule.prompt,
+                    negative_prompt:
+                      schedule.generation_settings?.negative_prompt || '',
+                    start_image: schedule.generation_settings?.start_image_url,
+                    mode: schedule.generation_settings?.mode || 'standard',
+                    duration: schedule.generation_settings?.duration || 5,
+                    user_id: schedule.user_id,
+                    task_id: schedule.task_id,
+                  },
+                }
+              );
+              generateResult = result.data;
+              generateError = result.error;
             }
-          );
-          generateResult = result.data;
-          generateError = result.error;
+          } else {
+            // No max_videos limit set, proceed with generation
+            console.log(
+              `Schedule ${schedule.id}: No max_videos limit set. Proceeding with generation.`
+            );
+
+            const result = await supabase.functions.invoke(
+              'video-generation-processor',
+              {
+                body: {
+                  schedule_id: schedule.id,
+                  generation_job_id: newJob.id,
+                  prompt: schedule.prompt,
+                  negative_prompt:
+                    schedule.generation_settings?.negative_prompt || '',
+                  start_image: schedule.generation_settings?.start_image_url,
+                  mode: schedule.generation_settings?.mode || 'standard',
+                  duration: schedule.generation_settings?.duration || 5,
+                  user_id: schedule.user_id,
+                  task_id: schedule.task_id,
+                },
+              }
+            );
+            generateResult = result.data;
+            generateError = result.error;
+          }
         } else if (schedule.task_type === 'journal') {
           // For journal, we'll handle it differently since it doesn't generate images
           console.log(
@@ -212,7 +355,7 @@ serve(async (req) => {
         results.push({
           schedule_id: schedule.id,
           success: false,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }
@@ -238,7 +381,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         success: false,
       }),
       {

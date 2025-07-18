@@ -129,9 +129,9 @@ const PrintOnShirtView = () => {
     input_image_2_url: '',
     aspect_ratio: '1:1',
     schedule_enabled: true,
-    schedule_duration_hours: 24,
+    schedule_duration_hours: 1,
     max_images_to_generate: 10,
-    generation_interval_minutes: 60,
+    generation_interval_minutes: 1,
     use_bucket_images: true, // Always true since bucket is the only option
     bucket_image_1_ids: [] as string[],
     bucket_image_2_ids: [] as string[],
@@ -765,51 +765,10 @@ const PrintOnShirtView = () => {
         </Button>
       </div>
 
-      {/* Generated Images Notification */}
-      {schedules.some((s) => s.completed_images && s.completed_images > 0) && (
-        <Card className="shadow-card border-blue-200 bg-blue-50">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                <div>
-                  <h3 className="text-sm font-medium text-blue-900">
-                    🎉 You have{' '}
-                    {schedules.reduce(
-                      (total, s) => total + (s.completed_images || 0),
-                      0
-                    )}{' '}
-                    generated images ready!
-                  </h3>
-                  <p className="text-xs text-blue-700">
-                    View your print-on-shirt images in the Output2 gallery
-                  </p>
-                </div>
-              </div>
-              <Button
-                onClick={() => navigate(`/project/${project.id}/output2`)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-                size="sm"
-              >
-                <ImageIcon className="h-4 w-4 mr-2" />
-                View Gallery
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Create Schedule Form */}
       {isCreating && (
         <Card className="shadow-card border-border/50">
-          <CardHeader>
-            <CardTitle>Create Print on Shirt Schedule</CardTitle>
-            <CardDescription>
-              Set up automated generation combining two images using FLUX
-              Kontext Multi-Image model
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 pt-6">
             {/* Basic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -846,22 +805,6 @@ const PrintOnShirtView = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="Describe what this schedule will generate..."
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label htmlFor="prompt">Combination Prompt *</Label>
               <Textarea
                 id="prompt"
@@ -876,46 +819,6 @@ const PrintOnShirtView = () => {
 
             {/* Image Selection Section */}
             <div className="space-y-6">
-              {/* Batch Generation Information */}
-              <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
-                <div className="flex items-start gap-3">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold text-blue-900 mb-2">
-                      🔄 Batch Generation Mode
-                    </h4>
-                    <p className="text-sm text-blue-800 mb-2">
-                      This schedule will generate images for{' '}
-                      <strong>every combination</strong> of selected bucket
-                      images:
-                    </p>
-                    <div className="text-xs text-blue-700 space-y-1">
-                      <div>
-                        • Set 1: {selectedBucketImages1.length} image
-                        {selectedBucketImages1.length !== 1 ? 's' : ''} selected
-                      </div>
-                      <div>
-                        • Set 2: {selectedBucketImages2.length} image
-                        {selectedBucketImages2.length !== 1 ? 's' : ''} selected
-                      </div>
-                      {selectedBucketImages1.length > 0 &&
-                        selectedBucketImages2.length > 0 && (
-                          <div className="mt-2 font-medium">
-                            📊 Total combinations:{' '}
-                            {selectedBucketImages1.length} ×{' '}
-                            {selectedBucketImages2.length} ={' '}
-                            {selectedBucketImages1.length *
-                              selectedBucketImages2.length}{' '}
-                            images will be generated
-                          </div>
-                        )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Image 1 */}
                 <div className="space-y-4">
@@ -1380,22 +1283,6 @@ const PrintOnShirtView = () => {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Description</Label>
-              <Textarea
-                id="edit-description"
-                value={formData.description}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="Describe what this schedule will generate..."
-                rows={3}
-              />
             </div>
 
             <div className="space-y-2">

@@ -43,9 +43,9 @@ const CreateImageAgent = () => {
     description: '',
     prompt: '',
     referenceImage: null as File | null,
-    maxImages: 100,
-    scheduleDuration: 8,
-    generationInterval: 60,
+    maxImages: 10,
+    scheduleDuration: 1,
+    generationInterval: 1,
     aspectRatio: 'match_input_image', // Add aspect ratio to form data
   });
 
@@ -447,13 +447,7 @@ const CreateImageAgent = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Information */}
             <Card className="shadow-card border-border/50">
-              <CardHeader>
-                <CardTitle className="text-2xl">Basic Information</CardTitle>
-                <CardDescription>
-                  Give your AI agent a name and description
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div className="space-y-2">
                   <Label htmlFor="name">Agent Name *</Label>
                   <Input
@@ -466,31 +460,12 @@ const CreateImageAgent = () => {
                     required
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description</Label>
-                  <Textarea
-                    id="description"
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                    placeholder="Describe what your AI agent will create..."
-                    rows={3}
-                  />
-                </div>
               </CardContent>
             </Card>
 
             {/* Prompt Configuration */}
             <Card className="shadow-card border-border/50">
-              <CardHeader>
-                <CardTitle className="text-2xl">Prompt Configuration</CardTitle>
-                <CardDescription>
-                  Define what your AI agent will generate
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-4 pt-6">
                 <div className="space-y-2">
                   <Label htmlFor="prompt">Generation Prompt *</Label>
                   <Textarea
@@ -508,36 +483,37 @@ const CreateImageAgent = () => {
                     upload a reference image below.
                   </p>
                 </div>
-                                 <div className="space-y-2">
-                   <Label htmlFor="aspect_ratio">Aspect Ratio</Label>
-                   <Select
-                     value={formData.aspectRatio}
-                     onValueChange={(value) =>
-                       setFormData({ ...formData, aspectRatio: value })
-                     }
-                   >
-                     <SelectTrigger>
-                       <SelectValue placeholder="Select aspect ratio" />
-                     </SelectTrigger>
-                     <SelectContent>
-                       <SelectItem value="match_input_image">
-                         Match Input Image
-                       </SelectItem>
-                       <SelectItem value="1:1">1:1 (Square)</SelectItem>
-                       <SelectItem value="16:9">16:9 (Wide)</SelectItem>
-                       <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
-                       <SelectItem value="4:3">4:3 (Standard)</SelectItem>
-                       <SelectItem value="3:4">3:4 (Portrait)</SelectItem>
-                       <SelectItem value="3:2">3:2 (Landscape)</SelectItem>
-                       <SelectItem value="2:3">2:3 (Portrait)</SelectItem>
-                       <SelectItem value="5:4">5:4 (Nearly Square)</SelectItem>
-                       <SelectItem value="4:5">4:5 (Portrait)</SelectItem>
-                     </SelectContent>
-                   </Select>
-                   <p className="text-xs text-muted-foreground">
-                     Control the dimensions of generated images. "Match Input Image" uses the reference image's aspect ratio.
-                   </p>
-                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="aspect_ratio">Aspect Ratio</Label>
+                  <Select
+                    value={formData.aspectRatio}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, aspectRatio: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select aspect ratio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="match_input_image">
+                        Match Input Image
+                      </SelectItem>
+                      <SelectItem value="1:1">1:1 (Square)</SelectItem>
+                      <SelectItem value="16:9">16:9 (Wide)</SelectItem>
+                      <SelectItem value="9:16">9:16 (Portrait)</SelectItem>
+                      <SelectItem value="4:3">4:3 (Standard)</SelectItem>
+                      <SelectItem value="3:4">3:4 (Portrait)</SelectItem>
+                      <SelectItem value="3:2">3:2 (Landscape)</SelectItem>
+                      <SelectItem value="2:3">2:3 (Portrait)</SelectItem>
+                      <SelectItem value="5:4">5:4 (Nearly Square)</SelectItem>
+                      <SelectItem value="4:5">4:5 (Portrait)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Control the dimensions of generated images. "Match Input
+                    Image" uses the reference image's aspect ratio.
+                  </p>
+                </div>
               </CardContent>
             </Card>
 

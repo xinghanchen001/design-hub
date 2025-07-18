@@ -124,49 +124,7 @@ Deno.serve(async (req) => {
     const bucketSettings = (schedule.bucket_settings as any) || {};
     const generationSettings = (schedule.generation_settings as any) || {};
 
-    // Check if we've reached the max images limit
-    const { count: existingContentCount } = await supabase
-      .from('generated_content')
-      .select('*', { count: 'exact', head: true })
-      .eq('schedule_id', schedule_id)
-      .eq('content_type', 'image');
-
-    // Support both field names: max_images and max_images_to_generate
-    const maxImages =
-      generationSettings.max_images_to_generate ||
-      generationSettings.max_images ||
-      10;
-
-    if (existingContentCount && existingContentCount >= maxImages) {
-      console.log(
-        `📸 Schedule ${schedule.name} has reached max images limit (${maxImages})`
-      );
-
-      // Disable the schedule
-      await supabase
-        .from('schedules')
-        .update({
-          status: 'paused',
-        })
-        .eq('id', schedule_id);
-
-      return new Response(
-        JSON.stringify({
-          success: false,
-          message: `Schedule paused: reached max images limit of ${maxImages}`,
-          existing_images: existingContentCount,
-          max_images: maxImages,
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        }
-      );
-    }
-
-    console.log(
-      `📊 Image generation progress: ${existingContentCount}/${maxImages} images generated`
-    );
+    console.log('📊 Starting image generation process...');
 
     // Create or update generation job
     let generation_job_id = job_id;

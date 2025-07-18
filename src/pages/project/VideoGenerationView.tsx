@@ -108,9 +108,9 @@ const VideoGenerationView = () => {
     mode: 'standard',
     duration: 5,
     schedule_enabled: true,
-    schedule_duration_hours: 24,
+    schedule_duration_hours: 1,
     max_videos_to_generate: 5,
-    generation_interval_minutes: 60,
+    generation_interval_minutes: 1,
     use_bucket_images: false,
     bucket_image_ids: [],
   });
@@ -444,42 +444,17 @@ const VideoGenerationView = () => {
       {/* Create Schedule Form */}
       {isCreating && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Video className="h-5 w-5" />
-              Create Video Generation Schedule
-            </CardTitle>
-            <CardDescription>
-              Set up automated video generation using AI
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="name">Schedule Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                  placeholder="My video schedule"
-                />
-              </div>
-              <div>
-                <Label htmlFor="description">Description</Label>
-                <Input
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }))
-                  }
-                  placeholder="Optional description"
-                />
-              </div>
+          <CardContent className="space-y-6 pt-6">
+            <div>
+              <Label htmlFor="name">Schedule Name *</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) =>
+                  setFormData((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder="My video schedule"
+              />
             </div>
 
             <div>
