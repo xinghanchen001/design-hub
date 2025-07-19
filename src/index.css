@@ -17,47 +17,47 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 215 25% 27%;
 
-    /* Primary - Teal Brand Color */
-    --primary: 169 100% 39%;
-    --primary-foreground: 0 0% 100%;
-    --primary-glow: 169 100% 49%;
+    /* Primary - Vibrant Lime Green */
+    --primary: 78 92% 62%;
+    --primary-foreground: 0 0% 0%;
+    --primary-glow: 78 92% 72%;
 
-    /* Secondary - Golden Accent */
-    --secondary: 38 100% 60%;
+    /* Secondary - Darker Lime Green */
+    --secondary: 78 82% 45%;
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 24 22% 95%;
+    --muted: 210 40% 98%;
     --muted-foreground: 215 15% 47%;
 
-    --accent: 24 22% 95%;
+    --accent: 210 40% 98%;
     --accent-foreground: 215 25% 27%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 24 15% 88%;
-    --input: 24 15% 88%;
-    --ring: 169 100% 39%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 78 92% 62%;
 
     --radius: 0.75rem;
 
-    /* Brand Colors - Tryprofound Style */
-    --brand-primary: 169 100% 39%; /* #00BE9B */
-    --brand-primary-dark: 169 100% 30%; /* #009B79 */
-    --brand-secondary: 38 100% 60%; /* #FFB500 */
-    --brand-accent: 24 79% 85%; /* #FFE7CF */
-    --brand-neutral: 215 25% 32%; /* #485065 */
-    --brand-dark: 215 25% 22%; /* #353B49 */
-    --brand-warm: 20 43% 28%; /* #61372D */
-    --brand-orange: 28 91% 45%; /* #DD730C */
-    --brand-light-orange: 38 100% 70%; /* #FFC266 */
-    --brand-cream: 24 73% 90%; /* #FFE5CD */
+    /* Brand Colors - Lime Green Vibrant Style */
+    --brand-primary: 78 92% 62%; /* #C4F542 - Vibrant Lime Green */
+    --brand-primary-dark: 78 82% 45%; /* #9BD635 - Darker Lime */
+    --brand-secondary: 78 72% 35%; /* #6FA025 - Deep Lime */
+    --brand-accent: 78 45% 85%; /* #E8F7C4 - Light Lime */
+    --brand-neutral: 215 25% 32%; /* #485065 - Neutral Gray */
+    --brand-dark: 215 25% 22%; /* #353B49 - Dark Gray */
+    --brand-light: 78 35% 92%; /* #F3FBE3 - Very Light Lime */
+    --brand-contrast: 0 0% 0%; /* #000000 - Pure Black for contrast */
+    --brand-soft: 78 25% 75%; /* #D4E8B8 - Soft Lime */
+    --brand-bright: 78 100% 70%; /* #D4FF42 - Bright Lime */
 
     /* Gradients */
     --gradient-primary: linear-gradient(
       135deg,
       hsl(var(--brand-primary)),
-      hsl(var(--brand-secondary))
+      hsl(var(--brand-bright))
     );
     --gradient-accent: linear-gradient(
       45deg,
@@ -69,58 +69,58 @@ All colors MUST be HSL.
       hsl(var(--background)),
       hsl(var(--brand-accent) / 0.3)
     );
-    --gradient-warm: linear-gradient(
+    --gradient-vibrant: linear-gradient(
       135deg,
-      hsl(var(--brand-secondary)),
-      hsl(var(--brand-orange))
+      hsl(var(--brand-bright)),
+      hsl(var(--brand-primary))
     );
 
     /* Shadows */
-    --shadow-glow: 0 0 40px hsl(var(--brand-primary) / 0.3);
+    --shadow-glow: 0 0 40px hsl(var(--brand-primary) / 0.4);
     --shadow-card: 0 8px 32px hsl(var(--brand-neutral) / 0.15);
-    --shadow-warm: 0 4px 20px hsl(var(--brand-secondary) / 0.2);
+    --shadow-lime: 0 4px 20px hsl(var(--brand-primary) / 0.25);
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    --sidebar-background: 24 22% 98%;
+    --sidebar-background: 210 40% 98%;
     --sidebar-foreground: 215 25% 27%;
-    --sidebar-primary: 169 100% 39%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 24 22% 95%;
+    --sidebar-primary: 78 92% 62%;
+    --sidebar-primary-foreground: 0 0% 0%;
+    --sidebar-accent: 210 40% 98%;
     --sidebar-accent-foreground: 215 25% 27%;
-    --sidebar-border: 24 15% 88%;
-    --sidebar-ring: 169 100% 39%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 78 92% 62%;
   }
 
   .dark {
     --background: 215 25% 8%;
-    --foreground: 24 22% 95%;
+    --foreground: 210 40% 95%;
 
     --card: 215 25% 12%;
-    --card-foreground: 24 22% 95%;
+    --card-foreground: 210 40% 95%;
 
     --popover: 215 25% 12%;
-    --popover-foreground: 24 22% 95%;
+    --popover-foreground: 210 40% 95%;
 
-    --primary: 169 100% 49%;
-    --primary-foreground: 215 25% 8%;
+    --primary: 78 92% 62%;
+    --primary-foreground: 0 0% 0%;
 
-    --secondary: 38 100% 70%;
-    --secondary-foreground: 215 25% 8%;
+    --secondary: 78 72% 55%;
+    --secondary-foreground: 0 0% 0%;
 
     --muted: 215 25% 15%;
     --muted-foreground: 215 15% 65%;
 
     --accent: 215 25% 15%;
-    --accent-foreground: 24 22% 95%;
+    --accent-foreground: 210 40% 95%;
 
     --destructive: 0 62% 50%;
-    --destructive-foreground: 24 22% 95%;
+    --destructive-foreground: 210 40% 95%;
 
     --border: 215 25% 18%;
     --input: 215 25% 18%;
-    --ring: 169 100% 49%;
+    --ring: 78 92% 62%;
 
     /* Dark theme gradients */
     --gradient-subtle: linear-gradient(
@@ -129,15 +129,16 @@ All colors MUST be HSL.
       hsl(var(--brand-neutral) / 0.3)
     );
     --shadow-card: 0 8px 32px hsl(0 0% 0% / 0.3);
+    --shadow-lime: 0 4px 20px hsl(var(--brand-primary) / 0.3);
 
     --sidebar-background: 215 25% 10%;
-    --sidebar-foreground: 24 22% 90%;
-    --sidebar-primary: 169 100% 49%;
-    --sidebar-primary-foreground: 215 25% 8%;
+    --sidebar-foreground: 210 40% 90%;
+    --sidebar-primary: 78 92% 62%;
+    --sidebar-primary-foreground: 0 0% 0%;
     --sidebar-accent: 215 25% 15%;
-    --sidebar-accent-foreground: 24 22% 90%;
+    --sidebar-accent-foreground: 210 40% 90%;
     --sidebar-border: 215 25% 18%;
-    --sidebar-ring: 169 100% 49%;
+    --sidebar-ring: 78 92% 62%;
   }
 }
 
@@ -150,13 +151,21 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 
-  /* Tryprofound-inspired custom classes */
+  /* Lime Green Brand Classes */
   .bg-brand-primary {
     background-color: hsl(var(--brand-primary));
   }
 
   .bg-brand-secondary {
     background-color: hsl(var(--brand-secondary));
+  }
+
+  .bg-brand-bright {
+    background-color: hsl(var(--brand-bright));
+  }
+
+  .bg-brand-accent {
+    background-color: hsl(var(--brand-accent));
   }
 
   .text-brand-primary {
@@ -167,7 +176,39 @@ All colors MUST be HSL.
     color: hsl(var(--brand-secondary));
   }
 
+  .text-brand-contrast {
+    color: hsl(var(--brand-contrast));
+  }
+
   .border-brand-primary {
     border-color: hsl(var(--brand-primary));
+  }
+
+  .border-brand-accent {
+    border-color: hsl(var(--brand-accent));
+  }
+
+  /* Lime Green Hover Effects */
+  .hover-lime {
+    transition: var(--transition-smooth);
+  }
+
+  .hover-lime:hover {
+    background-color: hsl(var(--brand-primary));
+    color: hsl(var(--brand-contrast));
+    box-shadow: var(--shadow-lime);
+  }
+
+  /* Gradient Backgrounds */
+  .bg-gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .bg-gradient-vibrant {
+    background: var(--gradient-vibrant);
+  }
+
+  .bg-gradient-subtle {
+    background: var(--gradient-subtle);
   }
 }

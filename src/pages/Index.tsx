@@ -120,7 +120,7 @@ const Index = () => {
       );
 
       setProjects(projectsWithCounts);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching projects:', error);
       toast.error('Failed to load projects');
     } finally {
@@ -153,19 +153,17 @@ const Index = () => {
 
       if (error) throw error;
 
-      const activities: Activity[] = (recentContent || []).map(
-        (content: any) => ({
-          id: content.id,
-          title: content.title || `New ${content.content_type}`,
-          description: `Generated in ${content.tasks.name}`,
-          timestamp: content.created_at,
-          type: 'generation' as const,
-          project_name: content.tasks.projects.name,
-        })
-      );
+      const activities: Activity[] = (recentContent || []).map((content) => ({
+        id: content.id,
+        title: content.title || `New ${content.content_type}`,
+        description: `Generated in ${content.tasks.name}`,
+        timestamp: content.created_at,
+        type: 'generation' as const,
+        project_name: content.tasks.projects.name,
+      }));
 
       setActivities(activities);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error fetching activities:', error);
     } finally {
       setLoadingActivities(false);
@@ -203,32 +201,36 @@ const Index = () => {
     <div className="min-h-screen bg-gradient-subtle">
       {/* Header */}
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Bot className="h-8 w-8 text-primary" />
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
+        <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 md:gap-3">
+              <Bot className="h-6 w-6 md:h-8 md:w-8 text-primary" />
+              <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-primary to-purple-600 bg-clip-text text-transparent">
                 Design Hub
               </h1>
             </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={() => navigate('/create-project')}
-              variant="outline"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              New Project
-            </Button>
-            <ThemeToggle />
-            <Button variant="outline" onClick={signOut}>
-              Sign Out
-            </Button>
+            <div className="flex items-center gap-2 md:gap-4">
+              <div className="hidden sm:block">
+                <ThemeToggle />
+              </div>
+              <Button
+                variant="outline"
+                onClick={signOut}
+                size="sm"
+                className="md:h-10 md:px-4"
+              >
+                <span className="hidden sm:inline">Sign Out</span>
+                <span className="sm:hidden">Out</span>
+              </Button>
+              <div className="block sm:hidden">
+                <ThemeToggle />
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="container mx-auto px-4 py-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         {/* Welcome Section */}
         <div className="text-center space-y-4">
           <h2 className="text-3xl font-bold">Welcome back!</h2>
@@ -243,15 +245,6 @@ const Index = () => {
         <section className="space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-2xl font-semibold">Your Projects</h3>
-            {projects.length > 0 && (
-              <Button
-                variant="outline"
-                onClick={() => navigate('/create-project')}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Project
-              </Button>
-            )}
           </div>
 
           {projects.length === 0 ? (
@@ -261,21 +254,11 @@ const Index = () => {
                 <div className="space-y-2">
                   <h3 className="text-xl font-semibold">No projects yet</h3>
                   <p className="text-muted-foreground">
-                    Create your first project to start generating amazing
-                    designs with AI.
+                    Your projects will appear here once created.
                     <br />
                     Each project includes image generation, print-on-shirt, and
                     journal tasks.
                   </p>
-                </div>
-                <div className="flex justify-center">
-                  <Button
-                    onClick={() => navigate('/create-project')}
-                    className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Your First Project
-                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -342,13 +325,16 @@ const Index = () => {
                           <div className="p-2 rounded-full bg-primary/10">
                             <Activity className="h-4 w-4 text-primary" />
                           </div>
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium break-words min-w-0 flex-1">
                                 {activity.title}
                               </span>
                               {activity.project_name && (
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge
+                                  variant="secondary"
+                                  className="text-xs flex-shrink-0"
+                                >
                                   {activity.project_name}
                                 </Badge>
                               )}

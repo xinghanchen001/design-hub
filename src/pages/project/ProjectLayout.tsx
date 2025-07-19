@@ -801,43 +801,27 @@ const ProjectLayout = () => {
                   </div>
                 </div>
 
-                {/* Project Info */}
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  {/* Active Schedules with Animation and Hover Details */}
-                  <HoverCard>
-                    <HoverCardTrigger asChild>
-                      <div className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
-                        <div className="relative">
-                          <Calendar className="h-4 w-4" />
-                          {getActiveSchedules().length > 0 && (
+                {/* Project Info - Only show when there are active schedules */}
+                {getActiveSchedules().length > 0 && (
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <HoverCard>
+                      <HoverCardTrigger asChild>
+                        <div className="flex items-center gap-1 cursor-pointer hover:text-foreground transition-colors">
+                          <div className="relative">
+                            <Calendar className="h-4 w-4" />
                             <div className="absolute -top-0.5 -right-0.5 h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
-                          )}
-                        </div>
-                        <span>
-                          {
-                            schedules.filter((s) => s.status === 'active')
-                              .length
-                          }{' '}
-                          active
-                        </span>
-                        {getActiveSchedules().length > 0 && (
+                          </div>
+                          <span>{getActiveSchedules().length} active</span>
                           <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
-                        )}
-                      </div>
-                    </HoverCardTrigger>
-                    <HoverCardContent className="w-80" align="end">
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
-                          <h4 className="font-semibold">Active Schedules</h4>
-                          <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
                         </div>
-
-                        {getActiveSchedules().length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            No schedules are currently running
-                          </p>
-                        ) : (
+                      </HoverCardTrigger>
+                      <HoverCardContent className="w-80" align="end">
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                            <h4 className="font-semibold">Active Schedules</h4>
+                            <div className="h-2 w-2 bg-blue-500 rounded-full animate-pulse" />
+                          </div>
                           <div className="space-y-3">
                             {getActiveSchedules().map((schedule) => (
                               <div
@@ -881,13 +865,137 @@ const ProjectLayout = () => {
                               </div>
                             ))}
                           </div>
-                        )}
-                      </div>
-                    </HoverCardContent>
-                  </HoverCard>
-                </div>
+                        </div>
+                      </HoverCardContent>
+                    </HoverCard>
+                  </div>
+                )}
               </div>
             </header>
+
+            {/* Active Schedules Banner */}
+            {getActiveSchedules().length > 0 && (
+              <div className="bg-gradient-to-r from-blue-50 to-green-50 dark:from-blue-950/30 dark:to-green-950/30 border-b border-blue-200 dark:border-blue-800">
+                <HoverCard>
+                  <HoverCardTrigger asChild>
+                    <div className="cursor-pointer hover:from-blue-100 hover:to-green-100 dark:hover:from-blue-950/50 dark:hover:to-green-950/50 transition-all duration-200">
+                      <div className="px-6 py-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              <div className="relative">
+                                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+                                <div className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 bg-green-500 rounded-full animate-pulse" />
+                              </div>
+                              <span className="font-medium text-blue-900 dark:text-blue-100">
+                                {getActiveSchedules().length} Active Schedule
+                                {getActiveSchedules().length !== 1 ? 's' : ''}{' '}
+                                Running
+                              </span>
+                            </div>
+                            <div className="hidden sm:flex items-center gap-2">
+                              {getActiveSchedules()
+                                .slice(0, 3)
+                                .map((schedule, index) => (
+                                  <div
+                                    key={schedule.id}
+                                    className="flex items-center"
+                                  >
+                                    <span className="text-sm text-blue-800 dark:text-blue-200 bg-white/70 dark:bg-blue-900/30 px-2 py-1 rounded-full">
+                                      {schedule.name || schedule.taskTypeName}
+                                    </span>
+                                    {index <
+                                      Math.min(
+                                        getActiveSchedules().length - 1,
+                                        2
+                                      ) && (
+                                      <span className="text-blue-600 mx-1">
+                                        •
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              {getActiveSchedules().length > 3 && (
+                                <span className="text-sm text-blue-700 dark:text-blue-300">
+                                  +{getActiveSchedules().length - 3} more
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+                            <span>Hover for details</span>
+                            <Calendar className="h-4 w-4" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </HoverCardTrigger>
+                  <HoverCardContent className="w-96" align="center">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 border-b pb-2">
+                        <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                        <h4 className="font-semibold text-lg">
+                          Active Schedules Details
+                        </h4>
+                        <div className="h-2.5 w-2.5 bg-green-500 rounded-full animate-pulse" />
+                      </div>
+                      <div className="space-y-3 max-h-60 overflow-y-auto">
+                        {getActiveSchedules().map((schedule) => (
+                          <div
+                            key={schedule.id}
+                            className="p-3 rounded-lg border border-green-200 dark:border-green-800 bg-gradient-to-r from-green-50 to-blue-50 dark:from-green-950/20 dark:to-blue-950/20"
+                          >
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-medium text-sm">
+                                  {schedule.name || schedule.taskTypeName}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                                  <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                                    Running
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                <span className="font-medium">
+                                  {schedule.taskTypeName}
+                                </span>
+                                <span className="mx-1">•</span>
+                                <span>{formatInterval(schedule)}</span>
+                              </div>
+                              {schedule.description && (
+                                <p className="text-xs text-muted-foreground line-clamp-2">
+                                  {schedule.description}
+                                </p>
+                              )}
+                              {schedule.task?.settings?.prompt && (
+                                <div className="mt-2">
+                                  <p className="text-xs text-muted-foreground font-medium mb-1">
+                                    Prompt:
+                                  </p>
+                                  <p className="text-xs text-muted-foreground line-clamp-2 bg-white/50 dark:bg-slate-800/50 p-2 rounded border">
+                                    "{schedule.task.settings.prompt}"
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="text-center pt-2 border-t">
+                        <button
+                          onClick={() => navigate('schedules')}
+                          className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 font-medium"
+                        >
+                          Manage All Schedules →
+                        </button>
+                      </div>
+                    </div>
+                  </HoverCardContent>
+                </HoverCard>
+              </div>
+            )}
 
             {/* Content */}
             <div className="p-6">

@@ -19,6 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -41,6 +47,7 @@ import {
   ImageIcon,
   Folder,
   Check,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -1735,8 +1742,8 @@ const PrintOnShirtView = () => {
           schedules.map((schedule) => (
             <Card key={schedule.id} className="shadow-card border-border/50">
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-3 flex-1">
                     <div
                       className={`w-3 h-3 rounded-full ${
                         schedule.status === 'active'
@@ -1744,9 +1751,13 @@ const PrintOnShirtView = () => {
                           : 'bg-gray-400'
                       }`}
                     />
-                    <h3 className="text-lg font-semibold">{schedule.name}</h3>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold break-words">
+                        {schedule.name}
+                      </h3>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-end">
                     <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
                       <span className="text-sm font-medium">
                         {schedule.status === 'active' ? 'Active' : 'Paused'}
@@ -1783,91 +1794,62 @@ const PrintOnShirtView = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => navigate(`/project/${project.id}/output2`)}
-                      className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+                      className="h-9 w-9 p-0"
                     >
-                      <ImageIcon className="h-4 w-4 mr-2" />
-                      View Images
+                      <ImageIcon className="h-4 w-4" />
+                      <span className="sr-only">View Images</span>
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={async () => {
-                        try {
-                          const { data: session } =
-                            await supabase.auth.getSession();
-                          if (!session.session) {
-                            toast.error('Please sign in to generate images');
-                            return;
-                          }
 
-                          toast.info('Starting generation...');
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 w-9 p-0"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => handleEditSchedule(schedule)}
+                        >
+                          <Settings className="mr-2 h-4 w-4" />
+                          Edit Settings
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={async () => {
+                            if (
+                              !window.confirm(
+                                `Are you sure you want to delete "${schedule.name}"? All generated images from this schedule will also be deleted.`
+                              )
+                            )
+                              return;
 
-                          const { data, error } =
-                            await supabase.functions.invoke(
-                              'generate-multi-image-fixed',
-                              {
-                                body: {
-                                  scheduleId: schedule.id,
-                                },
-                              }
-                            );
+                            try {
+                              const { error } = await supabase
+                                .from('schedules')
+                                .delete()
+                                .eq('id', schedule.id);
 
-                          if (error) {
-                            console.error('Generation error:', error);
-                            toast.error(
-                              error.message || 'Failed to generate image'
-                            );
-                          } else {
-                            toast.success('Image generated successfully!');
-                            await loadSchedules(); // Refresh to show updated stats
-                          }
-                        } catch (error: any) {
-                          toast.error(
-                            error.message || 'Failed to generate image'
-                          );
-                        }
-                      }}
-                    >
-                      <Zap className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditSchedule(schedule)}
-                    >
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={async () => {
-                        if (
-                          !window.confirm(
-                            `Are you sure you want to delete "${schedule.name}"? All generated images from this schedule will also be deleted.`
-                          )
-                        )
-                          return;
+                              if (error) throw error;
 
-                        try {
-                          const { error } = await supabase
-                            .from('schedules')
-                            .delete()
-                            .eq('id', schedule.id);
-
-                          if (error) throw error;
-
-                          toast.success('Schedule deleted successfully');
-                          await loadSchedules();
-                        } catch (error: any) {
-                          toast.error(
-                            error.message || 'Failed to delete schedule'
-                          );
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                              toast.success('Schedule deleted successfully');
+                              await loadSchedules();
+                            } catch (error: any) {
+                              toast.error(
+                                error.message || 'Failed to delete schedule'
+                              );
+                            }
+                          }}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Schedule
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
 
@@ -1886,88 +1868,15 @@ const PrintOnShirtView = () => {
                   </div>
                   <div>
                     <Activity className="h-3 w-3 inline mr-1" />
-                    Multi-Image
+                    Print-on-Shirt
                   </div>
-                </div>
-
-                {/* Image Stats */}
-                <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium">Generation Progress</h4>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => navigate(`/project/${project.id}/output2`)}
-                      className="text-xs h-6 px-2"
-                    >
-                      View Gallery →
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 text-xs">
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-green-600">
-                        {schedule.completed_images || 0}
-                      </div>
-                      <div className="text-muted-foreground">Completed</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-red-600">
-                        {schedule.failed_images || 0}
-                      </div>
-                      <div className="text-muted-foreground">Failed</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-blue-600">
-                        {schedule.total_images || 0}
-                      </div>
-                      <div className="text-muted-foreground">Total</div>
-                    </div>
-                  </div>
-                  {schedule.status !== 'active' &&
-                    schedule.total_images &&
-                    schedule.total_images >=
-                      schedule.max_images_to_generate && (
-                      <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                        ⏸️ Auto-paused: Reached max limit (
-                        {schedule.max_images_to_generate} images).
-                        <button
-                          onClick={() => handleEditSchedule(schedule)}
-                          className="ml-1 underline hover:no-underline"
-                        >
-                          Increase limit to continue
-                        </button>
-                      </div>
-                    )}
-                  {schedule.status !== 'active' &&
-                    (!schedule.total_images ||
-                      schedule.total_images <
-                        schedule.max_images_to_generate) && (
-                      <div className="mt-2 text-xs text-blue-600 bg-blue-50 p-2 rounded">
-                        ⏸️ Schedule paused manually. Toggle switch to resume
-                        generation.
-                      </div>
-                    )}
                 </div>
 
                 <div className="mb-4">
                   <p className="text-sm font-medium mb-2">Prompt</p>
-                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-2">
+                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-6">
                     {schedule.prompt}
                   </p>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    Created:{' '}
-                    {new Date(schedule.created_at).toLocaleDateString()}
-                  </div>
-                  <Badge
-                    variant={
-                      schedule.status === 'active' ? 'default' : 'secondary'
-                    }
-                  >
-                    {schedule.status === 'active' ? 'Active' : 'Paused'}
-                  </Badge>
                 </div>
               </CardContent>
             </Card>

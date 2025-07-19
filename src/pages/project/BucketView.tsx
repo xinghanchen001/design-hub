@@ -362,8 +362,8 @@ const BucketView = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex-1">
           <h1 className="text-3xl font-bold text-foreground">
             Reference Bucket -{' '}
             {actualProjectType.charAt(0).toUpperCase() +
@@ -376,7 +376,7 @@ const BucketView = () => {
             workflow
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-start sm:justify-end">
           {images.length > 0 && (
             <Button
               variant={isSelecting ? 'secondary' : 'outline'}

@@ -21,6 +21,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import CreateImageAgentDialog from '@/components/CreateImageAgentDialog';
@@ -35,6 +41,7 @@ import {
   Activity,
   Upload,
   X,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -403,7 +410,7 @@ const SchedulesView = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">
             Image Generation Schedules
@@ -449,14 +456,14 @@ const SchedulesView = () => {
               <Card key={schedule.id} className="shadow-card border-border/50">
                 <CardContent className="p-6">
                   {/* Header Section */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                    <div className="flex items-center gap-3 flex-1">
                       <div
                         className={`w-3 h-3 rounded-full ${
                           isActive ? 'bg-green-500' : 'bg-gray-400'
                         }`}
                       />
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         {isScheduleBeingEdited ? (
                           <div className="space-y-2">
                             <Input
@@ -470,23 +477,17 @@ const SchedulesView = () => {
                               placeholder="Schedule name..."
                               className="text-lg font-semibold border-0 bg-transparent p-0 focus:ring-1 focus:ring-primary"
                             />
-                            <p className="text-sm text-muted-foreground">
-                              Task: {taskName} ({taskType})
-                            </p>
                           </div>
                         ) : (
                           <div>
-                            <h3 className="text-lg font-semibold">
+                            <h3 className="text-lg font-semibold break-words">
                               {schedule.name}
                             </h3>
-                            <p className="text-sm text-muted-foreground">
-                              Task: {taskName} ({taskType})
-                            </p>
                           </div>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-end">
                       {!isScheduleBeingEdited && (
                         <>
                           <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
@@ -530,43 +531,68 @@ const SchedulesView = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => openSettingsDialog(schedule)}
+                            onClick={() =>
+                              navigate(`/project/${project.id}/images`)
+                            }
+                            className="h-9 w-9 p-0"
                           >
-                            <Settings className="h-4 w-4" />
+                            <Images className="h-4 w-4" />
+                            <span className="sr-only">View Images</span>
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                            onClick={async () => {
-                              if (
-                                !window.confirm(
-                                  `Are you sure you want to delete "${schedule.name}"? All generated content for this schedule will also be deleted.`
-                                )
-                              )
-                                return;
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-9 w-9 p-0"
+                              >
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span className="sr-only">Open menu</span>
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => openSettingsDialog(schedule)}
+                              >
+                                <Settings className="mr-2 h-4 w-4" />
+                                Edit Settings
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={async () => {
+                                  if (
+                                    !window.confirm(
+                                      `Are you sure you want to delete "${schedule.name}"? All generated content for this schedule will also be deleted.`
+                                    )
+                                  )
+                                    return;
 
-                              try {
-                                const { error } = await supabase
-                                  .from('schedules')
-                                  .delete()
-                                  .eq('id', schedule.id);
+                                  try {
+                                    const { error } = await supabase
+                                      .from('schedules')
+                                      .delete()
+                                      .eq('id', schedule.id);
 
-                                if (error) throw error;
+                                    if (error) throw error;
 
-                                toast.success('Schedule deleted successfully');
-                                await loadUserSchedules();
-                              } catch (error: unknown) {
-                                const errorMessage =
-                                  error instanceof Error
-                                    ? error.message
-                                    : 'Failed to delete schedule';
-                                toast.error(errorMessage);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                                    toast.success(
+                                      'Schedule deleted successfully'
+                                    );
+                                    await loadUserSchedules();
+                                  } catch (error: unknown) {
+                                    const errorMessage =
+                                      error instanceof Error
+                                        ? error.message
+                                        : 'Failed to delete schedule';
+                                    toast.error(errorMessage);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Delete Schedule
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </>
                       )}
                       {isScheduleBeingEdited && (
@@ -858,7 +884,7 @@ const SchedulesView = () => {
 
                       <div className="mb-4">
                         <p className="text-sm font-medium mb-2">Prompt</p>
-                        <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-2">
+                        <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-6">
                           {schedule.prompt || 'No prompt set'}
                         </p>
                       </div>
@@ -880,20 +906,6 @@ const SchedulesView = () => {
                               ).toLocaleString()}
                             </span>
                           )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={isActive ? 'default' : 'secondary'}>
-                            {isActive ? 'Active' : 'Paused'}
-                          </Badge>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              navigate(`/project/${project.id}/dashboard`)
-                            }
-                          >
-                            View Project
-                          </Button>
                         </div>
                       </div>
                     </>

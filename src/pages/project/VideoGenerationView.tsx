@@ -19,6 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
@@ -41,6 +47,7 @@ import {
   ImageIcon,
   Folder,
   Check,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { Tables } from '@/integrations/supabase/types';
 
@@ -682,7 +689,10 @@ const VideoGenerationView = () => {
                 Create your first video generation schedule to start producing
                 AI videos
               </p>
-              <Button onClick={() => setCreateDialogOpen(true)} className="gap-2">
+              <Button
+                onClick={() => setCreateDialogOpen(true)}
+                className="gap-2"
+              >
                 <Plus className="h-4 w-4" />
                 Create Video Schedule
               </Button>
@@ -692,8 +702,8 @@ const VideoGenerationView = () => {
           schedules.map((schedule) => (
             <Card key={schedule.id}>
               <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                  <div className="flex items-center gap-3 flex-1">
                     <div
                       className={`w-3 h-3 rounded-full ${
                         schedule.status === 'active'
@@ -701,9 +711,13 @@ const VideoGenerationView = () => {
                           : 'bg-gray-400'
                       }`}
                     ></div>
-                    <h3 className="text-lg font-semibold">{schedule.name}</h3>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-lg font-semibold break-words">
+                        {schedule.name}
+                      </h3>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-end">
                     <div className="flex items-center gap-2 bg-muted/50 p-2 rounded-lg">
                       <span className="text-sm font-medium">
                         {schedule.status === 'active' ? 'Active' : 'Paused'}
@@ -717,26 +731,38 @@ const VideoGenerationView = () => {
                     </div>
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={() =>
                         navigate(`/project/${project.id}/video-output`)
                       }
-                      className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+                      className="h-9 w-9 p-0"
                     >
-                      <Video className="h-4 w-4 mr-2" />
-                      View Videos
+                      <Video className="h-4 w-4" />
+                      <span className="sr-only">View Videos</span>
                     </Button>
-                    <Button variant="outline">
-                      <Zap className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline">
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 w-9 p-0"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                          <span className="sr-only">Open menu</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem>
+                          <Settings className="mr-2 h-4 w-4" />
+                          Edit Settings
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive focus:text-destructive">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete Schedule
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
 
@@ -755,63 +781,15 @@ const VideoGenerationView = () => {
                   </div>
                   <div>
                     <Activity className="h-3 w-3 inline mr-1" />
-                    {schedule.mode === 'pro' ? '1080p' : '720p'} •{' '}
-                    {schedule.duration}s
-                  </div>
-                </div>
-
-                {/* Video Stats */}
-                <div className="mb-4 p-3 bg-muted/30 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-medium">Generation Progress</h4>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/project/${project.id}/video-output`)
-                      }
-                      className="text-xs h-6 px-2"
-                    >
-                      View Gallery →
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 text-xs">
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-green-600">
-                        {schedule.completed_videos || 0}
-                      </div>
-                      <div className="text-muted-foreground">Completed</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-red-600">
-                        {schedule.failed_videos || 0}
-                      </div>
-                      <div className="text-muted-foreground">Failed</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-blue-600">
-                        {schedule.total_videos || 0}
-                      </div>
-                      <div className="text-muted-foreground">Total</div>
-                    </div>
+                    Video Generation
                   </div>
                 </div>
 
                 <div className="mb-4">
                   <p className="text-sm font-medium mb-2">Prompt</p>
-                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-2">
+                  <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg line-clamp-6">
                     {schedule.prompt}
                   </p>
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    Created:{' '}
-                    {new Date(schedule.created_at).toLocaleDateString()}
-                  </div>
-                  <Badge>
-                    {schedule.status === 'active' ? 'Active' : 'Paused'}
-                  </Badge>
                 </div>
               </CardContent>
             </Card>

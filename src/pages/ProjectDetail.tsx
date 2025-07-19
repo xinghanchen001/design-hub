@@ -353,41 +353,64 @@ const ProjectDetail = () => {
     <div className="min-h-screen bg-gradient-subtle">
       {/* Header */}
       <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            {/* Breadcrumb Navigation */}
-            <div className="flex items-center gap-2 text-sm">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate('/')}
-                className="flex items-center gap-2 text-muted-foreground hover:text-primary px-2"
-              >
-                <Bot className="h-4 w-4" />
-                Design Hub
-              </Button>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Projects</span>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium">{project.name}</span>
+        <div className="container mx-auto px-4 py-3 md:py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1">
+              {/* Breadcrumb Navigation */}
+              <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm min-w-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate('/')}
+                  className="flex items-center gap-1 md:gap-2 text-muted-foreground hover:text-primary px-1 md:px-2 h-6 md:h-8"
+                >
+                  <Bot className="h-3 w-3 md:h-4 md:w-4" />
+                  <span className="hidden sm:inline">Design Hub</span>
+                </Button>
+                <ChevronRight className="h-3 w-3 md:h-4 md:w-4 text-muted-foreground" />
+                <span className="text-muted-foreground hidden sm:inline">
+                  Projects
+                </span>
+                <ChevronRight className="h-3 w-3 md:h-4 md:w-4 text-muted-foreground hidden sm:inline" />
+                <span className="font-medium text-xs md:text-sm truncate">
+                  {project.name}
+                </span>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button
-              variant="outline"
-              onClick={() => setShowEditProjectDialog(true)}
-            >
-              <Edit className="h-4 w-4 mr-2" />
-              Edit Project
-            </Button>
-            <Button
-              onClick={() => setShowCreateTaskDialog(true)}
-              className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Task
-            </Button>
-            <ThemeToggle />
+            <div className="flex items-center gap-1 md:gap-4 ml-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowEditProjectDialog(true)}
+                size="sm"
+                className="hidden sm:flex md:h-10 md:px-4"
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Edit Project
+              </Button>
+              <Button
+                onClick={() => setShowCreateTaskDialog(true)}
+                size="sm"
+                className="bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 md:h-10 md:px-4"
+              >
+                <Plus className="h-4 w-4 md:mr-2" />
+                <span className="hidden md:inline">Add Task</span>
+              </Button>
+              <div className="hidden sm:block">
+                <ThemeToggle />
+              </div>
+              {/* Mobile Edit Button */}
+              <Button
+                variant="outline"
+                onClick={() => setShowEditProjectDialog(true)}
+                size="sm"
+                className="sm:hidden p-2"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+              <div className="block sm:hidden">
+                <ThemeToggle />
+              </div>
+            </div>
           </div>
         </div>
 
