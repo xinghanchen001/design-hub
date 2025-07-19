@@ -790,7 +790,7 @@ const CreateImageAgent = () => {
               >
                 {loading || uploading ? (
                   <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                     {uploading ? 'Uploading...' : 'Creating AI Agent'}
                   </div>
                 ) : (

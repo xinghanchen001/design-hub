@@ -52,6 +52,7 @@ const Index = () => {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [loadingActivities, setLoadingActivities] = useState(true);
+  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -65,6 +66,18 @@ const Index = () => {
       fetchRecentActivities();
     }
   }, [user]);
+
+  const handleSignOut = async () => {
+    try {
+      setSigningOut(true);
+      await signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+      toast.error('Failed to sign out');
+    } finally {
+      setSigningOut(false);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -215,12 +228,19 @@ const Index = () => {
               </div>
               <Button
                 variant="outline"
-                onClick={signOut}
+                onClick={handleSignOut}
                 size="sm"
                 className="md:h-10 md:px-4"
+                disabled={signingOut}
               >
-                <span className="hidden sm:inline">Sign Out</span>
-                <span className="sm:hidden">Out</span>
+                {signingOut ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <span className="hidden sm:inline">Sign Out</span>
+                    <span className="sm:hidden">Out</span>
+                  </>
+                )}
               </Button>
               <div className="block sm:hidden">
                 <ThemeToggle />
@@ -259,6 +279,16 @@ const Index = () => {
                     Each project includes image generation, print-on-shirt, and
                     journal tasks.
                   </p>
+                </div>
+                <div className="pt-4">
+                  <Button
+                    onClick={() => navigate('/create-project')}
+                    className="bg-brand-primary hover:bg-brand-primary/90 text-brand-contrast"
+                    size="lg"
+                  >
+                    <Plus className="h-5 w-5 mr-2" />
+                    Create Your First Project
+                  </Button>
                 </div>
               </CardContent>
             </Card>

@@ -13,7 +13,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/components/AuthProvider';
 import { toast } from 'sonner';
-import { Sparkles, Bot, Zap, Shield, Users, Rocket } from 'lucide-react';
+import { Bot, Users, Rocket } from 'lucide-react';
 
 const Auth = () => {
   const [email, setEmail] = useState('');
@@ -82,7 +82,7 @@ const Auth = () => {
             <div className="space-y-4">
               <h2 className="text-4xl lg:text-5xl font-bold text-brand-neutral leading-tight">
                 Automate Your
-                <span className="bg-gradient-warm bg-clip-text text-transparent">
+                <span className="bg-gradient-primary bg-clip-text text-transparent">
                   {' '}
                   Creative{' '}
                 </span>
@@ -93,58 +93,6 @@ const Auth = () => {
                 your prompts and schedules. Never run out of creative content
                 again.
               </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4 max-w-md mx-auto lg:mx-0">
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-brand-accent/30">
-              <div className="p-2 rounded-full bg-brand-primary/10">
-                <Sparkles className="h-5 w-5 text-brand-primary" />
-              </div>
-              <span className="text-brand-neutral font-medium">
-                Scheduled Generation
-              </span>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-brand-cream/50">
-              <div className="p-2 rounded-full bg-brand-secondary/10">
-                <Zap className="h-5 w-5 text-brand-secondary" />
-              </div>
-              <span className="text-brand-neutral font-medium">
-                AI-Powered Consistency
-              </span>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-brand-accent/30">
-              <div className="p-2 rounded-full bg-brand-primary/10">
-                <Bot className="h-5 w-5 text-brand-primary" />
-              </div>
-              <span className="text-brand-neutral font-medium">
-                Reference Training
-              </span>
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-brand-cream/50">
-              <div className="p-2 rounded-full bg-brand-secondary/10">
-                <Shield className="h-5 w-5 text-brand-secondary" />
-              </div>
-              <span className="text-brand-neutral font-medium">
-                Secure & Private
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center lg:justify-start gap-6 pt-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-brand-primary">1000+</div>
-              <div className="text-sm text-brand-neutral/70">
-                Images Generated
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-brand-secondary">50+</div>
-              <div className="text-sm text-brand-neutral/70">Active Users</div>
-            </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-brand-primary">99.9%</div>
-              <div className="text-sm text-brand-neutral/70">Uptime</div>
             </div>
           </div>
         </div>
@@ -164,13 +112,13 @@ const Auth = () => {
               <TabsList className="grid w-full grid-cols-2 mb-6 bg-brand-accent/30">
                 <TabsTrigger
                   value="signin"
-                  className="data-[state=active]:bg-brand-primary data-[state=active]:text-white"
+                  className="data-[state=active]:bg-brand-primary data-[state=active]:text-brand-contrast"
                 >
                   Sign In
                 </TabsTrigger>
                 <TabsTrigger
                   value="signup"
-                  className="data-[state=active]:bg-brand-primary data-[state=active]:text-white"
+                  className="data-[state=active]:bg-brand-primary data-[state=active]:text-brand-contrast"
                 >
                   Sign Up
                 </TabsTrigger>
@@ -214,12 +162,12 @@ const Auth = () => {
                   </div>
                   <Button
                     type="submit"
-                    className="w-full bg-gradient-primary hover:shadow-glow transition-all duration-300 text-white border-0 mt-6"
+                    className="w-full bg-gradient-primary hover:shadow-glow transition-all duration-300 text-primary-foreground border-0 mt-6"
                     disabled={loading}
                   >
                     {loading ? (
                       <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                         Signing in...
                       </div>
                     ) : (
@@ -270,12 +218,12 @@ const Auth = () => {
                   </div>
                   <Button
                     type="submit"
-                    className="w-full bg-gradient-warm hover:shadow-warm transition-all duration-300 text-white border-0 mt-6"
+                    className="w-full bg-brand-primary hover:bg-brand-primary/90 text-brand-contrast border-0 mt-6"
                     disabled={loading}
                   >
                     {loading ? (
                       <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                         Creating account...
                       </div>
                     ) : (
